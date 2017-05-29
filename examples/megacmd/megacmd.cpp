@@ -1102,8 +1102,6 @@ string getListOfCompletionValues(vector<string> words)
     return completionValues;
 }
 
-
-
 void printHistory()
 {
     int length = history_length;
@@ -1116,12 +1114,34 @@ void printHistory()
     }
 
     mutexHistory.lock();
+#ifdef USE_READLINE
     for (int i = 0; i < length; i++)
     {
         history_set_pos(i);
-        OUTSTREAM << setw(offset) << i << "  " << current_history()->line << endl;
+        if (current_history())
+        {
+            OUTSTREAM << setw(offset) << i << "  " << current_history()->line << endl;
+        }
+        else
+        {
+            OUTSTREAM << setw(offset) << i << "  " << "Failed to get current history" << endl;
+        }
     }
+#else
+    for (int i = 1; i < length; i++)
+    {
+        HIST_ENTRY *h = history_get(i);
 
+        if (h)
+        {
+            OUTSTREAM << setw(offset) << i << "  " << h->line << endl;
+        }
+        else
+        {
+            OUTSTREAM << setw(offset) << i << "  " << "Failed to get current history" << endl;
+        }
+    }
+#endif
     mutexHistory.unlock();
 }
 
