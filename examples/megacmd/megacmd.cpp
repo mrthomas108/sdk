@@ -2712,10 +2712,8 @@ bool runningInBackground()
 
 int main(int argc, char* argv[])
 {
-#ifdef _WIN32
     // Set Environment's default locale
     setlocale(LC_ALL, ""); // "en_US.utf8" could be enough?
-#endif
 
 #ifdef __MACH__
     initializeMacOSStuff(argc,argv);
