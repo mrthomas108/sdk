@@ -35,11 +35,43 @@
 #define USE_VARARGS
 #define PREFER_STDARG
 
+//TODO: make USE_READLINE defined in autotools configuration
+#ifdef USE_READLINE
 #include <readline/readline.h>
 #include <readline/history.h>
+#else //libedit
+
+#include <editline/readline.h>
+
 #include <iomanip>
 #include <string>
 
+void rl_replace_line (const char *text, int clear_undo = 0)
+{
+  int len;
+
+  len = strlen (text);
+  strcpy (rl_line_buffer, text);
+  rl_end = len;
+}
+
+int rl_crlf() {
+  putc ('\n', rl_outstream);
+  return 0;
+}
+
+char * rl_copy_text (int start, int end)
+{
+  register int length;
+  char *toret;
+
+  length = end - start;
+  toret = (char *)malloc ((length + 1) * sizeof(char));
+  strncpy (toret, rl_line_buffer + start, length);
+  toret[length] = '\0';
+  return (toret);
+}
+#endif
 
 #ifdef _WIN32
 // convert UTF-8 to Windows Unicode wstring
@@ -241,6 +273,7 @@ void sigint_handler(int signum)
     rl_replace_line("", 0); //clean contents of actual command
     rl_crlf(); //move to nextline
 
+#ifdef USE_READLINE
     if (RL_ISSTATE(RL_STATE_ISEARCH) || RL_ISSTATE(RL_STATE_ISEARCH) || RL_ISSTATE(RL_STATE_ISEARCH))
     {
         RL_UNSETSTATE(RL_STATE_ISEARCH);
@@ -254,6 +287,8 @@ void sigint_handler(int signum)
         rl_reset_line_state();
     }
     rl_redisplay();
+#endif
+
 }
 
 #ifdef _WIN32
@@ -525,9 +560,11 @@ char* generic_completion(const char* text, int state, vector<string> validOption
     while (list_index < validOptions.size())
     {
         name = validOptions.at(list_index);
+#ifdef USE_READLINE
         if (!rl_completion_quote_character && interactiveThread()) {
             escapeEspace(name);
         }
+#endif
 
         list_index++;
 
@@ -535,7 +572,9 @@ char* generic_completion(const char* text, int state, vector<string> validOption
         {
             if (name.size() && (( name.at(name.size() - 1) == '=' ) || ( name.at(name.size() - 1) == '/' )))
             {
+#ifdef USE_READLINE
                 rl_completion_suppress_append = 1;
+#endif
             }
             foundone = true;
             return dupstr((char*)name.c_str());
@@ -693,9 +732,13 @@ char * flags_value_completion(const char*text, int state)
 
 void unescapeifRequired(string &what)
 {
+#ifdef USE_READLINE
     if (!rl_completion_quote_character && interactiveThread() ) {
         return unescapeEspace(what);
     }
+#else
+        return unescapeEspace(what);
+#endif
 }
 
 char* remotepaths_completion(const char* text, int state)
@@ -711,9 +754,13 @@ char* remotepaths_completion(const char* text, int state)
 #endif
         wildtext += "*";
 
+#ifdef USE_READLINE
         if (!rl_completion_quote_character) {
             unescapeEspace(wildtext);
         }
+#else
+            unescapeEspace(wildtext);
+#endif
         validpaths = cmdexecuter->listpaths(wildtext);
     }
     return generic_completion(text, state, validpaths);
@@ -977,7 +1024,9 @@ rl_compentry_func_t *getCompletionFunction(vector<string> words)
 
 static char** getCompletionMatches(const char * text, int start, int end)
 {
+#ifdef USE_READLINE
     rl_filename_quoting_desired = 1;
+#endif
 
     char **matches;
 
@@ -2115,7 +2164,10 @@ void executecommand(char* ptr)
         /* Move the cursor home */
         SetConsoleCursorPosition( hStdOut, { 0, 0 } );
 #else
+#ifdef USE_READLINE
         rl_clear_screen(0,0);
+#endif
+        rl_crlf (); //TODO: this is not enough (only an empty line is added)
 #endif
         return;
     }
@@ -2336,8 +2388,9 @@ void megacmd()
 {
     char *saved_line = NULL;
     int saved_point = 0;
-
+#ifdef USE_READLINE
     rl_save_prompt();
+#endif
 
     int readline_fd = -1;
     if (!consoleFailed)
@@ -2345,17 +2398,26 @@ void megacmd()
         readline_fd = fileno(rl_instream);
         //_setmode(readline_fd, _O_U8TEXT);
     }
+#ifndef USE_READLINE
+    if (!consoleFailed)
+    {
+        rl_callback_handler_install(*dynamicprompt ? dynamicprompt : prompts[COMMAND], store_line);
+    }
+    bool firstime = true;
+#endif
 
     for (;; )
     {
         if (prompt == COMMAND)
         {
-
+#ifdef USE_READLINE
             if (!consoleFailed)
             {
                 rl_callback_handler_install(*dynamicprompt ? dynamicprompt : prompts[COMMAND], store_line);
             }
-
+#else
+            rl_set_prompt(*dynamicprompt ? dynamicprompt : prompts[COMMAND]);
+#endif
             // display prompt
             if (saved_line)
             {
@@ -2364,7 +2426,18 @@ void megacmd()
             }
 
             rl_point = saved_point;
+#ifdef USE_READLINE
             rl_redisplay();
+#else
+            if (!firstime)
+            {
+                rl_forced_update_display();
+            }
+            else
+            {
+                firstime = false;
+            }
+#endif
         }
 
         // command editing loop - exits when a line is submitted
@@ -2386,6 +2459,9 @@ void megacmd()
 
                     if (!consoleFailed && cm->receivedReadlineInput(readline_fd))
                     {
+#ifndef USE_READLINE
+                        rl_set_prompt("");
+#endif
                         rl_callback_read_char();
                         if (doExit)
                         {
@@ -2430,10 +2506,13 @@ void megacmd()
         saved_line = rl_copy_text(0, rl_end);
 
         // remove prompt
+#ifdef USE_READLINE
         rl_save_prompt();
         rl_replace_line("", 0);
         rl_redisplay();
-
+#else
+        rl_replace_line("", 0);
+#endif
         if (line)
         {
             // execute user command
@@ -2734,18 +2813,25 @@ int main(int argc, char* argv[])
 
     rl_attempted_completion_function = getCompletionMatches;
     rl_completer_quote_characters = "\"'";
+#ifdef USE_READLINE
     rl_filename_quote_characters  = " ";
+#endif
     rl_completer_word_break_characters = (char *)" ";
-
+#ifdef USE_READLINE
     rl_char_is_quoted_p = &quote_detector;
+#endif
 
     if (!runningInBackground())
     {
+#ifdef USE_READLINE
         rl_callback_handler_install(NULL, NULL); //this initializes readline somehow,
         // so that we can use rl_message or rl_resize_terminal safely before ever
         // prompting anything.
-    }
+#else
+        rl_initialize(); //TODO: test this in readline
+#endif
 
+    }
 
     printWelcomeMsg();
     if (consoleFailed)

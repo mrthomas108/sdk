@@ -66,7 +66,11 @@ void PosixConsole::readpwchar(char* pw_buf, int pw_buf_size, int* pw_buf_pos, ch
         {
             (*pw_buf_pos)--;
         }
+#ifdef USE_READLINE
         else if (c == 13)
+#else
+        else if (c == 10 || c == 13)
+#endif
         {
             *line = (char*) malloc(*pw_buf_pos + 1);
             memcpy(*line, pw_buf, *pw_buf_pos);

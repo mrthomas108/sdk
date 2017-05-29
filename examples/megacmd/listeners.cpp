@@ -25,7 +25,11 @@
 
 #define USE_VARARGS
 #define PREFER_STDARG
+#ifdef USE_READLINE
 #include <readline/readline.h>
+#else
+#include <editline/readline.h>
+#endif
 
 using namespace mega;
 
