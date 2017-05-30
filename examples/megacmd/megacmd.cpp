@@ -51,8 +51,9 @@ void rl_replace_line (const char *text, int clear_undo = 0)
   int len;
 
   len = strlen (text);
-  strcpy (rl_line_buffer, text);
+  strcpy (rl_line_buffer, "ls");
   rl_end = len;
+  rl_point = rl_end;
 }
 
 int rl_crlf() {
@@ -269,11 +270,11 @@ void sigint_handler(int signum)
         setprompt(COMMAND);
     }
 
+#ifdef USE_READLINE
     // reset position and print prompt
     rl_replace_line("", 0); //clean contents of actual command
     rl_crlf(); //move to nextline
 
-#ifdef USE_READLINE
     if (RL_ISSTATE(RL_STATE_ISEARCH) || RL_ISSTATE(RL_STATE_ISEARCH) || RL_ISSTATE(RL_STATE_ISEARCH))
     {
         RL_UNSETSTATE(RL_STATE_ISEARCH);
@@ -287,6 +288,11 @@ void sigint_handler(int signum)
         rl_reset_line_state();
     }
     rl_redisplay();
+#else
+    fprintf(rl_outstream, "^C");
+    rl_crlf();
+    rl_insert(1,CTRL('u')); // force reset current line
+    rl_newline(0,0);
 #endif
 
 }
@@ -571,21 +577,19 @@ char* generic_completion(const char* text, int state, vector<string> validOption
         if (!( strcmp(text, "")) || (( name.size() >= len ) && ( strlen(text) >= len ) && ( name.find(text) == 0 )))
         {
             if (name.size() && (( name.at(name.size() - 1) == '=' ) || ( name.at(name.size() - 1) == '/' )))
+#ifdef USE_READLINE
             {
-    #ifdef USE_READLINE
-                {
-                    rl_completion_suppress_append = 1;
-                }
-    #else
-                {
-                    rl_completion_append_character = '\0';
-                }
-                else
-                {
-                    rl_completion_append_character = ' ';
-                }
-    #endif
+                rl_completion_suppress_append = 1;
             }
+#else
+            {
+                rl_completion_append_character = '\0';
+            }
+            else
+            {
+                rl_completion_append_character = ' ';
+            }
+    #endif
             foundone = true;
             return dupstr((char*)name.c_str());
         }
@@ -2197,7 +2201,9 @@ void executecommand(char* ptr)
 #ifdef USE_READLINE
         rl_clear_screen(0,0);
 #endif
-        rl_crlf (); //TODO: this is not enough (only an empty line is added)
+        rl_crlf(); //TODO: this is not enough (only an empty line is added) // with rl_insert(1,CTRL('l')); clears after an extra "Enter"
+//        rl_insert(1,CTRL('l'));
+//        rl_insert(1,CTRL('j'));
 #endif
         return;
     }
