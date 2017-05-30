@@ -572,9 +572,19 @@ char* generic_completion(const char* text, int state, vector<string> validOption
         {
             if (name.size() && (( name.at(name.size() - 1) == '=' ) || ( name.at(name.size() - 1) == '/' )))
             {
-#ifdef USE_READLINE
-                rl_completion_suppress_append = 1;
-#endif
+    #ifdef USE_READLINE
+                {
+                    rl_completion_suppress_append = 1;
+                }
+    #else
+                {
+                    rl_completion_append_character = '\0';
+                }
+                else
+                {
+                    rl_completion_append_character = ' ';
+                }
+    #endif
             }
             foundone = true;
             return dupstr((char*)name.c_str());
