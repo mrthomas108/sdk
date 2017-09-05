@@ -793,7 +793,7 @@ m_off_t Transfer::maxserverpos(int serverid)
         maxpos += 16;
     }
 
-    if (serverid == 1)
+    if (serverid == (remainingblocks + 1))
     {
         maxpos += reminingbytes;
     }
