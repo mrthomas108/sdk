@@ -22,38 +22,38 @@
 #ifndef MEGA_BASE64_H
 #define MEGA_BASE64_H 1
 
-#include "types.h"
+#include <string>
 
 namespace mega {
 // modified base64 encoding/decoding (unpadded, -_ instead of +/)
-class MEGA_API Base64
+class Base64
 {
-    static byte to64(byte);
-    static byte from64(byte);
+    static unsigned char to64(unsigned char);
+    static unsigned char from64(unsigned char);
 
 public:
-    static int btoa(const string&, string&);
-    static int btoa(const byte*, int, char*);
-    static int atob(const string&, string&);
-    static int atob(const char*, byte*, int);
+    static int btoa(const std::string&, std::string&);
+    static int btoa(const unsigned char*, int, char*);
+    static int atob(const std::string&, std::string&);
+    static int atob(const char*, unsigned char*, int);
 
-    static void itoa(int64_t, string *);
-    static int64_t atoi(string *);
+    static void itoa(long int, std::string *);
+    static long int atoi(std::string *);
 
 };
 
 // lowercase base32 encoding
-class MEGA_API Base32
+class Base32
 {
-    static byte to32(byte);
-    static byte from32(byte);
+    static unsigned char to32(unsigned char);
+    static unsigned char from32(unsigned char);
 
 public:
-    static int btoa(const byte*, int, char*);
-    static int atob(const char*, byte*, int);
+    static int btoa(const unsigned char*, int, char*);
+    static int atob(const char*, unsigned char*, int);
 };
 
-class MEGA_API URLCodec
+class URLCodec
 {
     static bool ishexdigit(char c);
     static bool issafe(char c);
@@ -61,8 +61,8 @@ class MEGA_API URLCodec
 
 
 public:
-    static void escape(string* plain, string* escaped);
-    static void unescape(string* escaped, string* plain);
+    static void escape(std::string* plain, std::string* escaped);
+    static void unescape(std::string* escaped, std::string* plain);
 };
 
 } // namespace

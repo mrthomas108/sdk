@@ -38,7 +38,7 @@
 #include <aio.h>
 #endif
 
-#include "mega.h"
+#include "mega/filesystem.h"
 
 #define DEBRISFOLDER ".debris"
 

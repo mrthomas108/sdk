@@ -20,10 +20,13 @@
  */
 
 #include "mega/base64.h"
+#include <stdio.h>
+
+using namespace std;
 
 namespace mega {
 // modified base64 conversion (no trailing '=' and '-_' instead of '+/')
-unsigned char Base64::to64(byte c)
+unsigned char Base64::to64(unsigned char c)
 {
     c &= 63;
  
@@ -50,7 +53,7 @@ unsigned char Base64::to64(byte c)
     return '_';
 }
 
-unsigned char Base64::from64(byte c)
+unsigned char Base64::from64(unsigned char c)
 {
     if ((c >= 'A') && (c <= 'Z'))
     {
@@ -84,14 +87,14 @@ unsigned char Base64::from64(byte c)
 int Base64::atob(const string &in, string &out)
 {
     out.resize(in.size() * 3 / 4 + 3);
-    out.resize(Base64::atob(in.data(), (byte *) out.data(), out.size()));
+    out.resize(Base64::atob(in.data(), (unsigned char *) out.data(), out.size()));
 
     return out.size();
 }
 
-int Base64::atob(const char* a, byte* b, int blen)
+int Base64::atob(const char* a, unsigned char* b, int blen)
 {
-    byte c[4];
+    unsigned char c[4];
     int i;
     int p = 0;
 
@@ -132,10 +135,10 @@ int Base64::atob(const char* a, byte* b, int blen)
     return p;
 }
 
-void Base64::itoa(int64_t val, string *result)
+void Base64::itoa(long int val, string *result)
 {
-    byte c;
-    int64_t rest;
+    unsigned char c;
+    long int rest;
     if (!result || val < 0)
     {
         return;
@@ -157,7 +160,7 @@ void Base64::itoa(int64_t val, string *result)
     }
 }
 
-int64_t Base64::atoi(string *val)
+long int Base64::atoi(string *val)
 {
     if (!val)
     {
@@ -171,11 +174,11 @@ int64_t Base64::atoi(string *val)
     }
 
     size_t pos = 0;
-    int64_t res = 0;
+    long int res = 0;
     int valid = 0;
     while (pos < len)
     {
-        byte b = from64(val->at(pos));
+        unsigned char b = from64(val->at(pos));
         if (b == 255)
         {
             pos++;
@@ -199,12 +202,12 @@ int64_t Base64::atoi(string *val)
 int Base64::btoa(const string &in, string &out)
 {
     out.resize(in.size() * 4 / 3 + 4);
-    out.resize(Base64::btoa((const byte*) in.data(), in.size(), (char *) out.data()));
+    out.resize(Base64::btoa((const unsigned char*) in.data(), in.size(), (char *) out.data()));
 
     return out.size();
 }
 
-int Base64::btoa(const byte* b, int blen, char* a)
+int Base64::btoa(const unsigned char* b, int blen, char* a)
 {
     int p = 0;
 
@@ -241,7 +244,7 @@ int Base64::btoa(const byte* b, int blen, char* a)
     return p;
 }
 
-byte Base32::to32(byte c)
+unsigned char Base32::to32(unsigned char c)
 {
     c &= 31;
 
@@ -253,7 +256,7 @@ byte Base32::to32(byte c)
     return c - 26 + '2';
 }
 
-byte Base32::from32(byte c)
+unsigned char Base32::from32(unsigned char c)
 {
     if ((c >= 'a') && (c <= 'z'))
     {
@@ -268,7 +271,7 @@ byte Base32::from32(byte c)
     return 255;
 }
 
-int Base32::btoa(const byte *b, int blen, char *a)
+int Base32::btoa(const unsigned char *b, int blen, char *a)
 {
     int p = 0;
 
@@ -321,9 +324,9 @@ int Base32::btoa(const byte *b, int blen, char *a)
     return p;
 }
 
-int Base32::atob(const char *a, byte *b, int blen)
+int Base32::atob(const char *a, unsigned char *b, int blen)
 {
-    byte c[8];
+    unsigned char c[8];
     int i;
     int p = 0;
 
