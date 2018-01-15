@@ -22,6 +22,9 @@
 #ifndef CONSOLE_CLASS
 #define CONSOLE_CLASS WinConsole
 
+#include <string>
+#include <deque>
+
 namespace mega {
 struct MEGA_API WinConsole : public Console
 {
@@ -30,6 +33,20 @@ struct MEGA_API WinConsole : public Console
 
     WinConsole();
     ~WinConsole();
+
+    // functions for native command editing (ie not using readline library)
+    static void setShellConsole();
+    void addInputChar(wchar_t c);
+    bool consolePeek();
+    bool consoleGetch(wchar_t& c);
+    void updateInputPrompt(const std::string& newprompt);
+    char* checkForCompletedInputLine();
+
+    HANDLE hInput;
+    HANDLE hOutput;
+    std::deque<wchar_t> inputCharBuffer;
+    bool echoOn;
+    size_t currentPromptLen;
 };
 } // namespace
 

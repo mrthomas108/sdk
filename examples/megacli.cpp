@@ -24,8 +24,22 @@
 
 #define USE_VARARGS
 #define PREFER_STDARG
+
+#ifndef NO_READLINE
 #include <readline/readline.h>
 #include <readline/history.h>
+#endif
+
+#ifdef _MSVC_LANG 
+#define USE_FILESYSTEM
+#endif
+
+#ifdef USE_FILESYSTEM
+#include <filesystem>
+namespace fs = std::experimental::filesystem;
+#endif
+
+
 #include <iomanip>
 
 using namespace mega;
@@ -1565,6 +1579,41 @@ static void dumptree(Node* n, int recurse, int depth = 0, const char* title = NU
     }
 }
 
+#ifdef USE_FILESYSTEM
+static void local_dumptree(const fs::directory_entry& de, int recurse, int depth = 0)
+{
+    if (depth)
+    {
+        for (int i = depth; i--; )
+        {
+            cout << "\t";
+        }
+
+        cout << de.path().filename().u8string() << " (";
+
+        if (fs::is_directory(de.status()))
+        {
+            cout << "folder";
+        }
+
+        cout << ")" << endl;
+
+        if (!recurse)
+        {
+            return;
+        }
+    }
+
+    if (fs::is_directory(de.status()))
+    {
+        for (auto i = fs::directory_iterator(de.path()); i != fs::directory_iterator(); ++i)
+        {
+            local_dumptree(*i, recurse, depth + 1);
+        }
+    }
+}
+#endif
+
 static void nodepath(handle h, string* path)
 {
     path->clear();
@@ -1627,7 +1676,7 @@ static char dynamicprompt[128];
 
 static const char* prompts[] =
 {
-    "MEGA> ", "Password:", "Old Password:", "New Password:", "Retype New Password:", "Master Key (base64):"
+    "MEGAcli> ", "Password:", "Old Password:", "New Password:", "Retype New Password:", "Master Key (base64):"
 };
 
 enum prompttype
@@ -1637,7 +1686,12 @@ enum prompttype
 
 static prompttype prompt = COMMAND;
 
-static char pw_buf[256];
+#if defined(WIN32) && defined(NO_READLINE)
+static char pw_buf[512];  // double space for unicode
+#else
+static char pw_buf[256];  
+#endif
+
 static int pw_buf_pos;
 
 static void setprompt(prompttype p)
@@ -1651,7 +1705,11 @@ static void setprompt(prompttype p)
     else
     {
         pw_buf_pos = 0;
+#if defined(WIN32) && defined(NO_READLINE)
+        static_cast<WinConsole*>(console)->updateInputPrompt(prompts[p]);
+#else
         cout << prompts[p] << flush;
+#endif
         console->setecho(false);
     }
 }
@@ -1801,10 +1859,12 @@ static void store_line(char* l)
         exit(0);
     }
 
+#ifndef NO_READLINE
     if (*l && prompt == COMMAND)
     {
         add_history(l);
     }
+#endif
 
     line = l;
 }
@@ -2017,6 +2077,11 @@ static void process_line(char* l)
                 cout << "      cd [remotepath]" << endl;
                 cout << "      pwd" << endl;
                 cout << "      lcd [localpath]" << endl;
+#ifdef USE_FILESYSTEM
+                cout << "      lls [-R] [localpath]" << endl;
+                cout << "      lpwd" << endl;
+                cout << "      lmkdir localpath" << endl;
+#endif
                 cout << "      import exportedfilelink#key" << endl;
                 cout << "      open exportedfolderlink#key" << endl;
                 cout << "      put localpattern [dstremotepath|dstemail:]" << endl;
@@ -2683,6 +2748,36 @@ static void process_line(char* l)
 
                         return;
                     }
+#ifdef USE_FILESYSTEM
+                    else if (words[0] == "lls") // local ls
+                    {
+                        int recursive = words.size() > 1 && words[1] == "-R";
+                        std::string ls_folder = words.size() > recursive + 1 ? words[recursive + 1] : fs::current_path().string();
+                        try
+                        {
+                            fs::path p(ls_folder);
+                            std::error_code ec;
+                            fs::directory_entry de(p, fs::status(p, ec));
+                            if (ec)
+                            {
+                                cerr << ec.message() << endl;
+                            }
+                            else if (!fs::exists(de.status()))
+                            {
+                                cerr << "not found" << endl;
+                            }
+                            else
+                            {
+                                local_dumptree(de, recursive);
+                            }
+                        }
+                        catch (std::exception& e)
+                        {
+                            cerr << "ERROR: " << e.what() << endl;
+                        }
+                        return;
+                    }
+#endif
                     else if (words[0] == "ipc")
                     {
                         // incoming pending contact action
@@ -2862,6 +2957,13 @@ static void process_line(char* l)
                             cout << "      sync [localpath dstremotepath|cancelslot]" << endl;
                         }
 
+                        return;
+                    }
+#endif
+#ifdef USE_FILESYSTEM
+                    else if (words[0] == "lpwd") // local pwd
+                    {
+                        cout << fs::current_path().u8string() << endl;
                         return;
                     }
 #endif
@@ -4170,6 +4272,24 @@ static void process_line(char* l)
                         }
                         return;
                     }
+#ifdef USE_FILESYSTEM
+                    else if (words[0] == "lmkdir")
+                    {
+                        if (words.size() > 1)
+                        {
+                            std::error_code ec;
+                            if (!fs::create_directory(words[1].c_str(), ec))
+                            {
+                                cerr << "Create directory failed: " << ec.message() << endl;
+                            }
+                        }
+                        else
+                        {
+                            cout << "      lmkdir localpath" << endl;
+                        }
+                        return;
+                    }
+#endif
                     break;
 
 
@@ -5233,10 +5353,16 @@ void DemoApp::userattr_update(User* u, int priv, const char* n)
 // main loop
 void megacli()
 {
+#ifndef NO_READLINE
     char *saved_line = NULL;
     int saved_point = 0;
 
     rl_save_prompt();
+#elif defined(WIN32) && defined(NO_READLINE)
+    WinConsole::setShellConsole();
+#else
+    #error non-windows platforms must use the readline library
+#endif
 
     for (;;)
     {
@@ -5293,6 +5419,9 @@ void megacli()
                 *dynamicprompt = 0;
             }
 
+#if defined(WIN32) && defined(NO_READLINE)
+            static_cast<WinConsole*>(console)->updateInputPrompt(*dynamicprompt ? dynamicprompt : prompts[COMMAND]);
+#else
             rl_callback_handler_install(*dynamicprompt ? dynamicprompt : prompts[COMMAND], store_line);
 
             // display prompt
@@ -5304,6 +5433,7 @@ void megacli()
 
             rl_point = saved_point;
             rl_redisplay();
+#endif
         }
 
         // command editing loop - exits when a line is submitted or the engine requires the CPU
@@ -5315,7 +5445,11 @@ void megacli()
             {
                 if (prompt == COMMAND)
                 {
+#if defined(WIN32) && defined(NO_READLINE)
+                    line = static_cast<WinConsole*>(console)->checkForCompletedInputLine();
+#else
                     rl_callback_read_char();
+#endif
                 }
                 else
                 {
@@ -5329,6 +5463,7 @@ void megacli()
             }
         }
 
+#ifndef NO_READLINE
         // save line
         saved_point = rl_point;
         saved_line = rl_copy_text(0, rl_end);
@@ -5337,6 +5472,7 @@ void megacli()
         rl_save_prompt();
         rl_replace_line("", 0);
         rl_redisplay();
+#endif
 
         if (line)
         {
@@ -5360,9 +5496,16 @@ int main()
 {
     SimpleLogger::setAllOutputs(&std::cout);
 
+    console = new CONSOLE_CLASS;
+
     // instantiate app components: the callback processor (DemoApp),
     // the HTTP I/O engine (WinHttpIO) and the MegaClient itself
-    client = new MegaClient(new DemoApp, new CONSOLE_WAIT_CLASS,
+    client = new MegaClient(new DemoApp, 
+#ifdef WIN32        
+                            new CONSOLE_WAIT_CLASS(static_cast<CONSOLE_CLASS*>(console)),
+#else
+                            new CONSOLE_WAIT_CLASS,
+#endif
                             new HTTPIO_CLASS, new FSACCESS_CLASS,
 #ifdef DBACCESS_CLASS
                             new DBACCESS_CLASS,
@@ -5380,8 +5523,6 @@ int main()
                             "." TOSTRING(MEGA_MICRO_VERSION));
 
     clientFolder = NULL;    // additional for folder links
-
-    console = new CONSOLE_CLASS;
 
     megacli();
 }
