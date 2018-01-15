@@ -720,6 +720,11 @@ mediainfo_pkg() {
 
     package_extract $zenlib_name $zenlib_file $zenlib_dir_extract
     ln -sfr $zenlib_dir_extract $build_dir/ZenLib || ln -sf $zenlib_dir_extract $build_dir/ZenLib
+
+    if [ $android_build -eq 1 ]; then
+        cp $build_dir/../../include/mega/mega_glob.h $zenlib_dir_extract/Source/ZenLib/glob.h
+    fi
+
     package_extract $mediainfolib_name $mediainfolib_file $mediainfolib_dir_extract
 
     local zenlib_params="--enable-static --disable-shared"
