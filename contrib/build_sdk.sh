@@ -722,7 +722,7 @@ mediainfo_pkg() {
     ln -sfr $zenlib_dir_extract $build_dir/ZenLib || ln -sf $zenlib_dir_extract $build_dir/ZenLib
 
     if [ $android_build -eq 1 ]; then
-        cp $build_dir/../../include/mega/mega_glob.h $zenlib_dir_extract/Source/ZenLib/glob.h
+        cp $build_dir/../../include/mega/mega_glob.h $zenlib_dir_extract/Source/glob.h
     fi
 
     package_extract $mediainfolib_name $mediainfolib_file $mediainfolib_dir_extract
