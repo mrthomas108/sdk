@@ -743,7 +743,8 @@ mediainfo_pkg() {
         mediainfolib_params="$mediainfolib_params --with-libz-static"
         mkdir -p $build_dir/Shared/Source/zlib
         #~ ln -sfr $(find $install_dir -name zlib.a) $build_dir/Shared/Source/zlib/libz.a
-        ln -sfr $install_dir/lib/libz.a $build_dir/Shared/Source/zlib/libz.a || ln -sf $install_dir/lib/libz.a $build_dir/Shared/Source/zlib/libz.a
+        ln -sfr $install_dir/lib/libz.a $build_dir/Shared/Source/zlib/libz.a || ln -sf $install_dir/lib/libz.a $build_dir/Shared/Source/zlib/libz.a \
+        || ln -sf $install_dir/libz.a $build_dir/Shared/Source/zlib/libz.a || ln -sf `find $install_dir -name libz.a` $build_dir/Shared/Source/zlib/libz.a
     fi
 
     package_configure $zenlib_name $zenlib_dir $install_dir "$zenlib_params" #TODO: tal vez install dir ha de ser ./ZenLib!!! casi 100% seguro
