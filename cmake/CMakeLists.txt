@@ -26,6 +26,8 @@ set (ENABLE_SYNC 1 CACHE TYPE BOOL)
 
 if (WIN32)
     set (NO_READLINE 1 CACHE TYPE BOOL)
+else(WIN32)
+    set(NO_READLINE 0)
 endif(WIN32)
 
 if(build_64_bit)
@@ -229,6 +231,9 @@ configure_file("${MegaDir}/logo.png" logo.png COPYONLY)
 # actual apps
 add_executable(megacli ${MegaDir}/examples/megacli.cpp)
 target_link_libraries(megacli Mega )
+if (NOT NO_READLINE)
+    target_link_libraries(megacli readline )
+endif (NOT NO_READLINE)
 
 add_executable(megasimplesync ${MegaDir}/examples/megasimplesync.cpp)
 target_link_libraries(megasimplesync Mega )
