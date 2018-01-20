@@ -2,7 +2,7 @@
  * @file mega/win32/megaconsole.h
  * @brief Win32 console I/O
  *
- * (c) 2013-2014 by Mega Limited, Auckland, New Zealand
+ * (c) 2013-2018 by Mega Limited, Auckland, New Zealand
  *
  * This file is part of the MEGA SDK - Client Access Engine.
  *
@@ -24,10 +24,83 @@
 
 #include <string>
 #include <deque>
+#include "autocomplete.h"
 
 namespace mega {
+
+struct MEGA_API ConsoleModel
+{
+    enum {
+        MaxHistoryEntries = 20
+    };
+    enum lineEditAction {
+        nullAction,
+        CursorLeft, CursorRight, CursorStart, CursorEnd,
+        WordLeft, WordRight,
+        HistoryUp, HistoryDown, HistoryStart, HistoryEnd,
+        ClearLine, DeleteCharLeft, DeleteCharRight, DeleteWordLeft, DeleteWordRight,
+        Paste, AutoCompleteForwards, AutoCompleteBackwards
+    };
+
+    // If using autocomplete, client to specify the syntax of commands here so we know what.  Assign to this directly
+    ::mega::autocomplete::ACN autocompleteSyntax;
+
+    // a buffer to store characters received from keypresses.  After a newline is received, we 
+    // don't check for keypresses anymore until that line is consumed.
+    std::wstring buffer;
+
+    // the point in the buffer that new characters get inserted (corresponds to cursor on screen)
+    int insertPos = 0;
+
+    // we can receive multiple newlines in a single key event. All these must be consumed before we check for more keypresses
+    unsigned newlinesBuffered = 0;
+
+    // remember the last N commands executed 
+    std::deque<std::wstring> inputHistory;
+ 
+    // when using up and down arrow keys, this is the line selected
+    int inputHistoryIndex = -1;
+
+    // slightly different handling on the first history keypress
+    bool enteredHistory = false;
+
+    // if echo is on then edits appear on screen; if it is off then nothing appears and history is not added (suitable for passwords).
+    bool echoOn = true;
+
+    // we can do autocomplete like windows' cmd.exe or like unix.  Start with the one matching the current platform
+#ifdef WIN32
+    bool unixCompletions = false;
+#else
+    bool unixCompletions = true;
+#endif
+
+    // flags to indicate to the real console if redraws etc need to occur
+    bool redrawInputLineNeeded = false;
+    bool consoleNewlineNeeded = false;
+
+    // real console tells us a key is pressed resulting in a character to add
+    void addInputChar(wchar_t c);
+
+    // real console has interpreted a key press as a special action needed
+    void performLineEditingAction(lineEditAction action);
+
+    // client can check this after adding characters or performing actions to see if the user submitted the line for processing 
+    bool checkForCompletedInputLine(std::wstring& ws);
+
+private:
+    autocomplete::CompletionState autocompleteState;
+
+    void getHistory(int index, int offset);
+    void deleteCharRange(int start, int end);
+    void redrawInputLine(int p);
+    int detectWordBoundary(int start, bool forward);
+    void autoComplete(bool forwards);
+};
+    
+    
 struct MEGA_API WinConsole : public Console
 {
+    HANDLE inputAvailableHandle();
     void readpwchar(char*, int, int* pw_buf_pos, char**);
     void setecho(bool);
 
@@ -36,17 +109,28 @@ struct MEGA_API WinConsole : public Console
 
     // functions for native command editing (ie not using readline library)
     static void setShellConsole();
-    void addInputChar(wchar_t c);
+    void setAutocompleteSyntax(autocomplete::ACN);
+    void setAutocompleteStyle(bool unix);
     bool consolePeek();
     bool consoleGetch(wchar_t& c);
     void updateInputPrompt(const std::string& newprompt);
     char* checkForCompletedInputLine();
+    void clearScreen();
 
+private:
     HANDLE hInput;
     HANDLE hOutput;
-    std::deque<wchar_t> inputCharBuffer;
-    bool echoOn;
-    size_t currentPromptLen;
+    COORD knownCursorPos;  // if this has moved then something logged and we should redraw the prompt and input so far on a new line.
+    ConsoleModel model;
+
+    std::string currentPrompt;
+    size_t inputLineOffset = 0;
+
+    void prepareDetectLogging();
+    void redrawPromptIfLoggingOccurred();
+    void redrawInputLine();
+    ConsoleModel::lineEditAction interpretLineEditingKeystroke(INPUT_RECORD &ir);
+
 };
 } // namespace
 

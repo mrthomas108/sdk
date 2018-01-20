@@ -21,8 +21,9 @@ set (USE_CURL 1 CACHE TYPE BOOL)
 set (USE_SQLITE 1 CACHE TYPE BOOL )
 set (USE_MEDIAINFO 1 CACHE TYPE BOOL)
 set (USE_FREEIMAGE 1 CACHE TYPE BOOL)
-set (USE_SODIUM 0 CACHE TYPE BOOL)
+set (USE_SODIUM 1 CACHE TYPE BOOL)
 set (ENABLE_SYNC 1 CACHE TYPE BOOL)
+set (ENABLE_CHAT 1 CACHE TYPE BOOL)
 
 if (WIN32)
     set (NO_READLINE 1 CACHE TYPE BOOL)
@@ -89,6 +90,14 @@ IF(WIN32)
                                         "${Mega3rdPartyDir}/cryptopp565/x64/Output/Release/cryptlib.lib")
     ENDIF(USE_CRYPTOPP)
 
+    IF(USE_SODIUM)
+    ImportStaticLibrary(sodium          "${Mega3rdPartyDir}/libsodium-1.0.15/src/libsodium/include"
+                                        "${Mega3rdPartyDir}/NOTYET" 
+                                        "${Mega3rdPartyDir}/NOTYET" 
+                                        "${Mega3rdPartyDir}/libsodium-1.0.15/Build/Debug/x64/libsodium.lib" 
+                                        "${Mega3rdPartyDir}/NOTYET")
+    ENDIF(USE_SODIUM)
+
     IF(USE_CURL)
         ImportStaticLibrary(curl        "${Mega3rdPartyDir}/curl-7.56.0/include"
                                         "${Mega3rdPartyDir}/curl-7.56.0/builds/libcurl-vc-x86-debug-static-ssl-static-cares-static-zlib-static-ipv6-sspi/lib/libcurl_a_debug.lib" 
@@ -147,7 +156,7 @@ IF(WIN32)
     SET(Mega_PlatformSpecificLibs ws2_32 winhttp Shlwapi)
 
     get_target_property(sqlite3dir sqlite3 INTERFACE_INCLUDE_DIRECTORIES)
-    SET(Mega_PlatformSpecificFiles ${MegaDir}/src/win32/console.cpp ${MegaDir}/src/win32/consolewaiter.cpp ${MegaDir}/src/win32/fs.cpp ${MegaDir}/src/posix/net.cpp ${MegaDir}/src/win32/waiter.cpp ${MegaDir}/src/thread/win32thread.cpp  ${sqlite3dir}/sqlite3.c )
+    SET(Mega_PlatformSpecificFiles ${MegaDir}/src/win32/console.cpp ${MegaDir}/src/win32/autocomplete.cpp ${MegaDir}/src/win32/consolewaiter.cpp ${MegaDir}/src/win32/fs.cpp ${MegaDir}/src/posix/net.cpp ${MegaDir}/src/win32/waiter.cpp ${MegaDir}/src/thread/win32thread.cpp  ${sqlite3dir}/sqlite3.c )
 
 
 ELSE(WIN32)
@@ -207,8 +216,8 @@ add_library(Mega STATIC
 
 target_include_directories(Mega PRIVATE ${MegaDir}/include ${Mega_PlatformSpecificIncludes})
 target_include_directories(Mega INTERFACE ${MegaDir}/include ${Mega_PlatformSpecificIncludes})
-target_link_libraries(Mega PUBLIC $<${USE_CRYPTOPP}:cryptopp> $<${USE_OPENSSL}:ssl> $<${USE_CURL}:curl> $<${USE_CURL}:cares> $<${USE_SQLITE}:sqlite3> $<${USE_MEDIAINFO}:mediainfo> $<${USE_MEDIAINFO}:zen> ${Mega_PlatformSpecificLibs})
-target_compile_definitions(Mega PUBLIC $<${USE_MEDIAINFO}:USE_MEDIAINFO> $<${USE_SQLITE}:USE_SQLITE> $<${USE_CRYPTOPP}:USE_CRYPTOPP> $<${USE_OPENSSL}:USE_OPENSSL> $<${USE_CURL}:USE_CURL> $<${ENABLE_SYNC}:ENABLE_SYNC> $<${USE_SODIUM}:USE_SODIUM>  $<${NO_READLINE}:NO_READLINE>  )
+target_link_libraries(Mega PUBLIC zlib $<${USE_CRYPTOPP}:cryptopp> $<${USE_SODIUM}:sodium> $<${USE_OPENSSL}:ssl> $<${USE_CURL}:curl> $<${USE_CURL}:cares> $<${USE_SQLITE}:sqlite3> $<${USE_MEDIAINFO}:mediainfo> $<${USE_MEDIAINFO}:zen> ${Mega_PlatformSpecificLibs})
+target_compile_definitions(Mega PUBLIC $<${USE_MEDIAINFO}:USE_MEDIAINFO> $<${USE_SQLITE}:USE_SQLITE> $<${USE_CRYPTOPP}:USE_CRYPTOPP> $<${USE_OPENSSL}:USE_OPENSSL> $<${USE_CURL}:USE_CURL> $<${ENABLE_SYNC}:ENABLE_SYNC> $<${ENABLE_CHAT}:ENABLE_CHAT> $<${USE_SODIUM}:USE_SODIUM>  $<${NO_READLINE}:NO_READLINE>  )
 
 #test apps
 add_executable(test_sdk             ${MegaDir}/tests/sdk_test.cpp 
@@ -229,10 +238,11 @@ target_link_libraries(test_purge_account gtest Mega )
 configure_file("${MegaDir}/logo.png" logo.png COPYONLY)
 
 # actual apps
+
 add_executable(megacli ${MegaDir}/examples/megacli.cpp)
 target_link_libraries(megacli Mega )
 if (NOT NO_READLINE)
-    target_link_libraries(megacli readline )
+    target_link_libraries(megacli readline)
 endif (NOT NO_READLINE)
 
 add_executable(megasimplesync ${MegaDir}/examples/megasimplesync.cpp)

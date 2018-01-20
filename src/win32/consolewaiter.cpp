@@ -38,7 +38,8 @@ int WinConsoleWaiter::wait()
 
     if (console)
     {
-        addhandle(console->hInput, 0);
+
+        addhandle(console->inputAvailableHandle(), 0);
     }
 
     // aggregated wait

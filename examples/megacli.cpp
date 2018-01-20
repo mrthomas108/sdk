@@ -39,7 +39,6 @@
 namespace fs = std::experimental::filesystem;
 #endif
 
-
 #include <iomanip>
 
 using namespace mega;
@@ -1714,6 +1713,8 @@ static void setprompt(prompttype p)
     }
 }
 
+
+#ifdef THIS_CODE_EXISTS_IN_MEGA_LIB
 TreeProcCopy::TreeProcCopy()
 {
     nn = NULL;
@@ -1768,6 +1769,7 @@ void TreeProcCopy::proc(MegaClient* client, Node* n)
         nc++;
     }
 }
+#endif
 
 int loadfile(string* name, string* data)
 {
@@ -1868,6 +1870,98 @@ static void store_line(char* l)
 
     line = l;
 }
+
+#ifdef WIN32
+
+autocomplete::ACN autocompleteTemplate;
+
+autocomplete::ACN autocompleteSyntax()
+{
+    using namespace autocomplete;
+    std::unique_ptr<Either> p(new Either("      "));
+
+    p->Add(sequence(text("login"), param("email"), opt(param("password"))));
+    p->Add(sequence(text("login"), param("exportedfolderurl#key")));
+    p->Add(sequence(text("login"), param("session")));
+    p->Add(sequence(text("begin"), opt(param("ephemeralhandle#ephemeralpw"))));
+    p->Add(sequence(text("signup"), opt(sequence(param("email"), either(param("name"), param("confirmationlink"))))));
+    p->Add(sequence(text("confirm")));
+    p->Add(sequence(text("session")));
+    p->Add(sequence(text("mount")));
+    p->Add(sequence(text("ls"), opt(flag("-R")), opt(remoteFSFolder(client, &cwd))));
+    p->Add(sequence(text("cd"), opt(remoteFSFolder(client, &cwd))));
+    p->Add(sequence(text("pwd")));
+    p->Add(sequence(text("lcd"), opt(localFSFolder())));
+#ifdef USE_FILESYSTEM
+    p->Add(sequence(text("lls"), opt(flag("-R")), opt(localFSFolder())));
+    p->Add(sequence(text("lpwd")));
+    p->Add(sequence(text("lmkdir"), localFSFolder()));
+#endif
+    p->Add(sequence(text("import"), param("exportedfilelink#key")));
+    p->Add(sequence(text("open"), param("exportedfolderlink#key")));
+    p->Add(sequence(text("put"), localFSPath("localpattern"), opt(either(remoteFSPath(client, &cwd, "dst"),param("dstemail")))));
+    p->Add(sequence(text("putq"), opt(param("cancelslot"))));
+    p->Add(sequence(text("get"), remoteFSPath(client , &cwd), opt(sequence(param("offset"), opt(param("length"))))));
+    p->Add(sequence(text("get"), param("exportedfilelink#key"), opt(sequence(param("offset"), opt(param("length"))))));
+    p->Add(sequence(text("getq"), opt(param("cancelslot"))));
+    p->Add(sequence(text("pause"), opt(either(text("get"), text("put"))), opt(text("hard")), opt(text("status"))));
+    p->Add(sequence(text("getfa"), wholenumber(1), opt(remoteFSPath(client, &cwd)), opt(text("cancel"))));
+    p->Add(sequence(text("mkdir"), remoteFSFolder(client, &cwd)));
+    p->Add(sequence(text("rm"), remoteFSPath(client, &cwd)));
+    p->Add(sequence(text("mv"), remoteFSPath(client, &cwd, "src"), remoteFSPath(client, &cwd, "dst")));
+    p->Add(sequence(text("cp"), remoteFSPath(client, &cwd, "src"), either(remoteFSPath(client, &cwd, "dst"),param("dstemail"))));
+#ifdef ENABLE_SYNC
+    p->Add(sequence(text("sync"), opt(sequence(localFSPath(), either(remoteFSPath(client, &cwd, "dst"), param("cancelslot"))))));
+#endif
+    p->Add(sequence(text("export"), remoteFSPath(client, &cwd), opt(either(param("expiretime"), text("del")))));
+    p->Add(sequence(text("share"), opt(sequence(remoteFSPath(client, &cwd), opt(sequence(param("dstemail"), opt(either(text("r"), text("rw"), text("full"))), opt(param("origemail"))))))));
+    p->Add(sequence(text("invite"), param("dstemail"), opt(either(param("origemail"), text("del"), text("rmd")))));
+    p->Add(sequence(text("ipc"), param("handle"), either(text("a"), text("d"), text("i")))); 
+    p->Add(sequence(text("showpcr")));
+    p->Add(sequence(text("users"), opt(sequence(param("email"), text("del")))));
+    p->Add(sequence(text("getua"), param("attrname"), opt(param("email"))));
+    p->Add(sequence(text("putua"), param("attrname"), opt(either(text("del"), sequence(text("set"), param("string")), sequence(text("load"), localFSFile())))));
+#ifdef DEBUG
+    p->Add(sequence(text("delua"), param("attrname")));
+#endif
+    p->Add(sequence(text("putbps"), opt(either(wholenumber(100000), text("auto"), text("none")))));
+    p->Add(sequence(text("killsession"), opt(either(text("all"), param("sessionid")))));
+    p->Add(sequence(text("whoami")));
+    p->Add(sequence(text("passwd")));
+    p->Add(sequence(text("reset"), param("email"), opt(text("mk"))));
+    p->Add(sequence(text("recover"), param("recoverylink")));
+    p->Add(sequence(text("cancel"), opt(param("cancellink"))));
+    p->Add(sequence(text("email"), opt(either(param("newemail"), param("emaillink")))));
+    p->Add(sequence(text("retry")));
+    p->Add(sequence(text("recon")));
+    p->Add(sequence(text("reload"), opt(text("nocache"))));
+    p->Add(sequence(text("logout")));
+    p->Add(sequence(text("locallogout")));
+    p->Add(sequence(text("symlink")));
+    p->Add(sequence(text("version")));
+    p->Add(sequence(text("debug")));
+#ifdef WIN32
+    p->Add(sequence(text("clear")));
+#endif
+    p->Add(sequence(text("test")));
+#ifdef ENABLE_CHAT
+    p->Add(sequence(text("chats")));
+    p->Add(sequence(text("chatc"), param("group"), repeat(opt(sequence(param("email"), either(text("ro"), text("sta"), text("mod")))))));
+    p->Add(sequence(text("chati"), param("chatid"), param("email"), either(text("ro"), text("sta"), text("mod"))));
+    p->Add(sequence(text("chatr"), param("chatid"), opt(param("email"))));
+    p->Add(sequence(text("chatu"), param("chatid")));
+    p->Add(sequence(text("chatup"), param("chatid"), param("userhandle"), either(text("ro"), text("sta"), text("mod"))));
+    p->Add(sequence(text("chatpu")));
+    p->Add(sequence(text("chatga"), param("chatid"), param("nodehandle"), param("uid")));
+    p->Add(sequence(text("chatra"), param("chatid"), param("nodehandle"), param("uid")));
+    p->Add(sequence(text("chatst"), param("chatid"), param("title64")));
+#endif
+    p->Add(sequence(text("autocomplete"), opt(either(text("unix"), text("dos")))));
+    p->Add(sequence(text("quit")));
+
+    return autocompleteTemplate = std::move(p);
+}
+#endif
 
 // execute command
 static void process_line(char* l)
@@ -2065,6 +2159,11 @@ static void process_line(char* l)
 
             if (words[0] == "?" || words[0] == "h" || words[0] == "help")
             {
+#ifdef WIN32
+                std::ostringstream s;
+                s << *autocompleteTemplate;
+                cout << s.str() << flush;
+#else
                 cout << "      login email [password]" << endl;
                 cout << "      login exportedfolderurl#key" << endl;
                 cout << "      login session" << endl;
@@ -2125,6 +2224,9 @@ static void process_line(char* l)
                 cout << "      symlink" << endl;
                 cout << "      version" << endl;
                 cout << "      debug" << endl;
+#ifdef WIN32
+                cout << "      clear" << endl;
+#endif
                 cout << "      test" << endl;
 #ifdef ENABLE_CHAT
                 cout << "      chats" << endl;
@@ -2139,7 +2241,7 @@ static void process_line(char* l)
                 cout << "      chatst chatid title64" << endl;
 #endif
                 cout << "      quit" << endl;
-
+#endif
                 return;
             }
 
@@ -3556,6 +3658,13 @@ static void process_line(char* l)
 
                         return;
                     }
+#ifdef WIN32
+                    else if (words[0] == "clear")
+                    {
+                        static_cast<WinConsole*>(console)->clearScreen();
+                        return;
+                    }
+#endif
                     else if (words[0] == "retry")
                     {
                         if (client->abortbackoff())
@@ -4414,6 +4523,9 @@ static void process_line(char* l)
                         cout << "* sync subsystem" << endl;
 #endif
 
+#ifdef USE_MEDIAINFO
+                        cout << "* MediaInfo" << endl;
+#endif
 
                         cwd = UNDEF;
 
@@ -4504,6 +4616,34 @@ static void process_line(char* l)
 
                         return;
                     }
+                    break;
+
+                case 12:
+#ifdef WIN32
+                    if (words[0] == "autocomplete")
+                    {
+                        if (words.size() == 2)
+                        {
+                            if (words[1] == "unix")
+                            {
+                                static_cast<WinConsole*>(console)->setAutocompleteStyle(true);
+                            }
+                            else if (words[1] == "dos")
+                            {
+                                static_cast<WinConsole*>(console)->setAutocompleteStyle(false);
+                            }
+                            else
+                            {
+                                cout << "invalid autocomplete style" << endl;
+                            }
+                        }
+                        else
+                        {
+                            cout << "      autocomplete [unix|dos] " << endl;
+                        }
+                        return;
+                    }
+#endif
                     break;
             }
 
@@ -5443,24 +5583,41 @@ void megacli()
 
             if (w & Waiter::HAVESTDIN)
             {
+#if defined(WIN32)
+                line = static_cast<WinConsole*>(console)->checkForCompletedInputLine();
+#else
                 if (prompt == COMMAND)
                 {
-#if defined(WIN32) && defined(NO_READLINE)
-                    line = static_cast<WinConsole*>(console)->checkForCompletedInputLine();
-#else
                     rl_callback_read_char();
-#endif
                 }
                 else
                 {
                     console->readpwchar(pw_buf, sizeof pw_buf, &pw_buf_pos, &line);
                 }
+#endif
             }
 
             if (w & Waiter::NEEDEXEC || line)
             {
                 break;
             }
+
+//#ifdef _DEBUG
+//            {
+//                client->waiter->maxds =std::max<dstime>(client->waiter->maxds, 20);
+//                static time_t periodicLogTime = time(NULL);
+//                if (time(NULL) - periodicLogTime > 10)
+//                {
+//                    std::cout << "test log output interaction with prompt periodically" << std::endl;
+//                    if (rand() % 2)
+//                    {
+//                        std::cout << "test log output interaction with prompt periodically (second line sometimes)" << std::endl;
+//                    }
+//                    periodicLogTime = time(NULL);
+//                }
+//            }
+//#endif
+
         }
 
 #ifndef NO_READLINE
@@ -5522,8 +5679,11 @@ int main()
                             "." TOSTRING(MEGA_MINOR_VERSION)
                             "." TOSTRING(MEGA_MICRO_VERSION));
 
-    clientFolder = NULL;    // additional for folder links
+#ifdef WIN32
+    static_cast<WinConsole*>(console)->setAutocompleteSyntax(autocompleteSyntax());
+#endif
 
+    clientFolder = NULL;    // additional for folder links
     megacli();
 }
 
