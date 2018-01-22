@@ -28,8 +28,7 @@
 namespace fs = std::experimental::filesystem;
 
 namespace mega {
-namespace autocomplete 
-{
+namespace autocomplete {
 
 inline bool icmp(char a, char b)
 {

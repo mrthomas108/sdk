@@ -115,7 +115,7 @@ void ConsoleModel::autoComplete(bool forwards)
             autocompleteState = autocomplete::autoComplete(u8line, autocompleteSyntax, unixCompletions);
             autocompleteState.active = true;
         }
-        autocomplete::applyCompletion(autocompleteState, forwards, unixCompletions);
+        autocomplete::applyCompletion(autocompleteState, forwards);
         buffer = inputLineFromUtf8String(autocompleteState.line);
         insertPos = (int)buffer.size();
         redrawInputLineNeeded = true;
