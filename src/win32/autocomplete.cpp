@@ -30,7 +30,25 @@ namespace fs = std::experimental::filesystem;
 namespace mega {
 namespace autocomplete {
 
-inline bool icmp(char a, char b)
+template<class T>
+static T clamp(T v, T lo, T hi)
+{
+    // todo: switch to c++17 std version when we can
+    if (v < lo)
+    {
+        return lo;
+    }
+    else if (v > hi)
+    {
+        return hi;
+    }
+    else
+    {
+        return v;
+    }
+}
+
+inline static bool icmp(char a, char b)
 {
     return(toupper(a) == toupper(b));
 }
@@ -391,7 +409,7 @@ bool MegaFS::addCompletions(ACState& s)
                     if (reportFolders && subnode->type == FOLDERNODE ||
                         reportFiles && subnode->type == FILENODE)
                     {
-                        s.addCompletion(pathprefix + subnode->displayname() + (s.unixStyle && subnode->type == FOLDERNODE ? "\\" : ""));
+                        s.addCompletion(pathprefix + subnode->displayname() + (s.unixStyle && subnode->type == FOLDERNODE ? "/" : ""));
                     }
                 }
             }
@@ -457,25 +475,24 @@ std::pair<int, int> identifyNextWord(const std::string& line, int startPos)
     return ret;
 }
 
-CompletionState autoComplete(const std::string line, ACN syntax, bool unixStyle)
+CompletionState autoComplete(const std::string line, size_t insertPos, ACN syntax, bool unixStyle)
 {
-    // initial verions, assume cursor is at the very end
-
     // find where we're up to in the line and what syntax options are available at that point
     ACState acs;
     acs.unixStyle = unixStyle;
     std::pair<int, int> linepos{ 0,0 };
-    bool last;
+    bool last, cursorInWord;
     do
     {
         linepos = identifyNextWord(line, linepos.second);
         last = linepos.first == linepos.second;
-        if (acs.words.empty() || !last || acs.wordPos[acs.wordPos.size() - 1].second < linepos.first)
+        cursorInWord = linepos.first <= insertPos && insertPos <= linepos.second;
+        if (acs.words.empty() || !last || acs.wordPos[acs.wordPos.size() - 1].second < linepos.first || cursorInWord)
         {
             acs.wordPos.push_back(linepos);
             acs.words.push_back(line.substr(linepos.first, linepos.second - linepos.first));
         }
-    } while (!last);
+    } while (!last && !cursorInWord);
 
     acs.i = 0;
     syntax->addCompletions(acs);
@@ -483,7 +500,20 @@ CompletionState autoComplete(const std::string line, ACN syntax, bool unixStyle)
     return CompletionState{ line, acs.wordPos[acs.wordPos.size()-1], acs.completions, unixStyle };
 }
 
-void applyCompletion(CompletionState& s, bool forwards)
+static size_t utf8strlen(const std::string s)
+{
+    size_t len = 0;
+    for (char c : s)
+    {
+        if ((c & 0xC0) != 0x80)
+        {
+            len += 1;
+        }
+    }
+    return len;
+}
+
+void applyCompletion(CompletionState& s, bool forwards, unsigned consoleWidth)
 {
     if (!s.completions.empty())
     {
@@ -537,27 +567,41 @@ void applyCompletion(CompletionState& s, bool forwards)
             {
                 // show remaining possibilities.  Assume up to 3 columns 5 rows, then they have to press again for more
                 std::cout << std::endl;
-                size_t columnWidth = 50;
+                size_t sumSize = 0, sumCount = 0, sumMax = 0;
+                for (size_t i = s.unixListCount; i < s.unixListCount + 30 && i < s.completions.size(); ++i)
+                {
+                    sumSize += s.completions[i].s.size();
+                    sumCount += 1;
+                    sumMax = std::max<size_t>(sumMax, s.completions[i].s.size());
+                }
+                size_t estimate = sumCount == 0 ? 50 : (sumSize / sumCount) * 5 / 3;
+                size_t columnWidth = clamp<size_t>(std::min<size_t>(estimate, sumMax + 3), 10, 200);
+                consoleWidth -= (consoleWidth > 3 ? 3 : 0);  // indent
+                size_t columns = std::max<size_t>(1, consoleWidth / columnWidth);
                 size_t row = 0, linepos = 0;
                 while (s.unixListCount < s.completions.size() && row < 5)
                 {
-                    while (linepos % columnWidth)
+                    if (linepos <= columnWidth * (columns-1))
                     {
-                        std::cout << ' ';
-                        linepos += 1;
+                        while (linepos % columnWidth)
+                        {
+                            std::cout << ' ';
+                            linepos += 1;
+                        }
                     }
-                    if (linepos >= columnWidth * 3)
+                    if (linepos > 0 && linepos + s.completions[s.unixListCount].s.size() > columnWidth * columns)
                     {
                         std::cout << std::endl;
                         linepos = 0;
                         row += 1;
                     }
-                    else
-                    {
-                        std::cout << s.completions[s.unixListCount].s;
-                        linepos += s.completions[s.unixListCount].s.size();
-                        s.unixListCount += 1;
+                    if (linepos == 0)
+                    {   // indent
+                        std::cout << "   ";
                     }
+                    std::cout << s.completions[s.unixListCount].s;
+                    linepos += utf8strlen(s.completions[s.unixListCount].s);
+                    s.unixListCount += 1;
                 }
                 if (linepos != 0)
                 {

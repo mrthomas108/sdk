@@ -37,7 +37,7 @@ struct MEGA_API ConsoleModel
         nullAction,
         CursorLeft, CursorRight, CursorStart, CursorEnd,
         WordLeft, WordRight,
-        HistoryUp, HistoryDown, HistoryStart, HistoryEnd,
+        HistoryUp, HistoryDown, HistoryStart, HistoryEnd, HistorySearchForward, HistorySearchBackward,
         ClearLine, DeleteCharLeft, DeleteCharRight, DeleteWordLeft, DeleteWordRight,
         Paste, AutoCompleteForwards, AutoCompleteBackwards
     };
@@ -50,7 +50,7 @@ struct MEGA_API ConsoleModel
     std::wstring buffer;
 
     // the point in the buffer that new characters get inserted (corresponds to cursor on screen)
-    int insertPos = 0;
+    size_t insertPos = 0;
 
     // we can receive multiple newlines in a single key event. All these must be consumed before we check for more keypresses
     unsigned newlinesBuffered = 0;
@@ -58,11 +58,14 @@ struct MEGA_API ConsoleModel
     // remember the last N commands executed 
     std::deque<std::wstring> inputHistory;
  
-    // when using up and down arrow keys, this is the line selected
-    int inputHistoryIndex = -1;
+    // when using up and down arrow keys, or using history search, this is the history line selected
+    size_t inputHistoryIndex = 0;
 
     // slightly different handling on the first history keypress
     bool enteredHistory = false;
+    bool searchingHistory = false;
+    bool searchingHistoryForward = false;
+    std::wstring historySearchString;
 
     // if echo is on then edits appear on screen; if it is off then nothing appears and history is not added (suitable for passwords).
     bool echoOn = true;
@@ -82,7 +85,7 @@ struct MEGA_API ConsoleModel
     void addInputChar(wchar_t c);
 
     // real console has interpreted a key press as a special action needed
-    void performLineEditingAction(lineEditAction action);
+    void performLineEditingAction(lineEditAction action, unsigned consoleWidth);
 
     // client can check this after adding characters or performing actions to see if the user submitted the line for processing 
     bool checkForCompletedInputLine(std::wstring& ws);
@@ -91,10 +94,13 @@ private:
     autocomplete::CompletionState autocompleteState;
 
     void getHistory(int index, int offset);
+    void searchHistory(bool forwards);
+    void updateHistoryMatch(bool forwards, bool increment);
+    void deleteHistorySearchChars(size_t n);
     void deleteCharRange(int start, int end);
     void redrawInputLine(int p);
     int detectWordBoundary(int start, bool forward);
-    void autoComplete(bool forwards);
+    void autoComplete(bool forwards, unsigned consoleWidth);
 };
     
     
@@ -116,6 +122,7 @@ struct MEGA_API WinConsole : public Console
     void updateInputPrompt(const std::string& newprompt);
     char* checkForCompletedInputLine();
     void clearScreen();
+    void outputHistory();
 
 private:
     HANDLE hInput;

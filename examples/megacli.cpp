@@ -1957,6 +1957,7 @@ autocomplete::ACN autocompleteSyntax()
     p->Add(sequence(text("chatst"), param("chatid"), param("title64")));
 #endif
     p->Add(sequence(text("autocomplete"), opt(either(text("unix"), text("dos")))));
+    p->Add(sequence(text("history")));
     p->Add(sequence(text("quit")));
 
     return autocompleteTemplate = std::move(p);
@@ -4576,6 +4577,13 @@ static void process_line(char* l)
                         cout << "Outgoing PCRs:" << endl << outgoing << endl;
                         return;
                     }
+#ifdef WIN32
+                    else if (words[0] == "history")
+                    {
+                        static_cast<WinConsole*>(console)->outputHistory();
+                        return;
+                    }
+#endif
                     break;
 
                 case 11:                    

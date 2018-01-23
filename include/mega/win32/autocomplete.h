@@ -167,8 +167,8 @@ namespace autocomplete {
         size_t unixListCount = 0;
     };
 
-    CompletionState autoComplete(const std::string line, ACN syntax, bool unixStyle);
-    void applyCompletion(CompletionState& s, bool forwards);
+    CompletionState autoComplete(const std::string line, size_t insertPos, ACN syntax, bool unixStyle);
+    void applyCompletion(CompletionState& s, bool forwards, unsigned consoleWidth);
 
     // functions to bulid command descriptions
     ACN either(ACN n1 = nullptr, ACN n2 = nullptr, ACN n3 = nullptr, ACN n4 = nullptr);
