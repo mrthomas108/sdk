@@ -1880,9 +1880,11 @@ autocomplete::ACN autocompleteSyntax()
     using namespace autocomplete;
     std::unique_ptr<Either> p(new Either("      "));
 
-    p->Add(sequence(text("login"), param("email"), opt(param("password"))));
-    p->Add(sequence(text("login"), param("exportedfolderurl#key")));
-    p->Add(sequence(text("login"), param("session")));
+    // which is clearer in the help output - one line or 3?
+    p->Add(sequence(text("login"), either(sequence(param("email"), opt(param("password"))), param("exportedfolderurl#key"), param("session"))));
+    //p->Add(sequence(text("login"), param("email"), opt(param("password"))));
+    //p->Add(sequence(text("login"), param("exportedfolderurl#key")));
+    //p->Add(sequence(text("login"), param("session")));
     p->Add(sequence(text("begin"), opt(param("ephemeralhandle#ephemeralpw"))));
     p->Add(sequence(text("signup"), opt(sequence(param("email"), either(param("name"), param("confirmationlink"))))));
     p->Add(sequence(text("confirm")));

@@ -334,7 +334,7 @@ void WinConsole::setAutocompleteSyntax(autocomplete::ACN a)
 
 void WinConsole::setAutocompleteStyle(bool unix)
 {
-    model.unixCompletions = true;
+    model.unixCompletions = unix;
 }
 
 HANDLE WinConsole::inputAvailableHandle()

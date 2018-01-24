@@ -44,9 +44,28 @@ namespace autocomplete {
 
         std::vector<Completion> completions;
         void addCompletion(const std::string& s, bool caseInsenstive = false);
+        void addPathCompletion(std::string& f, const std::string& relativeRootPath, bool isFolder, char dir_sep, bool caseInsensitive);
 
         std::vector<std::pair<int, int>> wordPos;
-        std::vector<std::string> words;
+
+        struct quoting
+        {
+            quoting();
+            quoting(std::string&);
+            bool quoted = false;
+            char quote_char = 0;
+            void applyQuotes(std::string& s);
+        };
+        struct quoted_word
+        {
+            quoted_word();
+            quoted_word(const std::string &);
+            quoted_word(const std::string &, const quoting&);
+            std::string s;
+            quoting q;
+        };
+
+        std::vector<quoted_word> words;
         unsigned i = 0;
 
         bool unixStyle = false;
@@ -54,7 +73,7 @@ namespace autocomplete {
         bool atCursor() {
             return i == words.size()-1;
         }
-        const std::string& word() {
+        const quoted_word& word() {
             return words[i];
         }
     };
@@ -158,6 +177,7 @@ namespace autocomplete {
     {
         std::string line;
         std::pair<int, int> wordPos;
+        ACState::quoted_word originalWord;
         std::vector<ACState::Completion> completions;
         bool unixStyle = false;
 

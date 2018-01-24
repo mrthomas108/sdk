@@ -53,11 +53,61 @@ inline static bool icmp(char a, char b)
     return(toupper(a) == toupper(b));
 }
 
+ACState::quoting::quoting()
+{
+}
+
+ACState::quoting::quoting(std::string& s)
+{
+    quoted = !s.empty() && s[0] == '\"' || s[0] == '\'';
+    if (quoted)
+    {
+        quote_char = s[0];
+        s.erase(0, 1);
+        if (!s.empty() && s.back() == quote_char)
+        {
+            s.pop_back();
+        }
+    }
+}
+
+void ACState::quoting::applyQuotes(std::string& w)
+{
+    if (quoted && quote_char != 0)
+    {
+        // reapply quotes as the user had them
+        w.insert(0, 1, quote_char);
+        w.push_back(quote_char);
+    }
+    else
+    {
+        // add quotes if it has a space in it now and doesn't already start with a quote
+        if (w.find(' ') != std::string::npos)
+        {
+            w = "\"" + w + "\"";
+        }
+    }
+}
+
+ACState::quoted_word::quoted_word()
+{
+}
+
+ACState::quoted_word::quoted_word(const std::string &str)
+    : s(str), q(s)
+{
+}
+
+ACState::quoted_word::quoted_word(const std::string &str, const quoting& quot)
+    : s (str), q(quot)
+{
+}
+
 void ACState::addCompletion(const std::string& s, bool caseInsensitive) 
 {
     // add if it matches the prefix. Doing the check here keeps subclasses simple
     assert(atCursor());
-    const std::string& prefix = word();
+    const std::string& prefix = word().s;
     if (!s.empty() && s.size() >= prefix.size())
     {
         bool equal;
@@ -76,12 +126,25 @@ void ACState::addCompletion(const std::string& s, bool caseInsensitive)
             if ((s[0] == '-' && !prefix.empty() && prefix[0] == '-') ||
                 (s[0] != '-' && (prefix.empty() || prefix[0] != '-')))
             {
-                ACState::Completion c{ s, caseInsensitive };
-                completions.emplace_back(std::move(c));
+                completions.emplace_back(ACState::Completion{ s, caseInsensitive });
             }
         }
     }
 }
+
+void ACState::addPathCompletion(std::string& f, const std::string& relativeRootPath, bool isFolder, char dir_sep, bool caseInsensitive)
+{
+    if (f.size() > relativeRootPath.size() && f.compare(0, relativeRootPath.size(), relativeRootPath) == 0)
+    {
+        f.erase(0, relativeRootPath.size());
+    }
+    if (unixStyle && isFolder)
+    {
+        f.push_back(dir_sep);
+    }
+    addCompletion(f, caseInsensitive);
+}
+
 
 
 std::ostream& operator<<(std::ostream& s, const ACNode& n)
@@ -102,7 +165,22 @@ bool Optional::addCompletions(ACState& s)
 
 std::ostream& Optional::describe(std::ostream& s) const
 {
-    return s << "[" << *subnode << "]";
+    if (auto e = dynamic_cast<Either*>(subnode.get()))
+    {
+        std::ostringstream s2;
+        s2 << *subnode;
+        std::string str = s2.str();
+        if (str.size() >= 2 && str.front() == '(' && str.back() == ')')
+        {
+            str.pop_back();
+            str.erase(0, 1);
+        }
+        return s << "[" << str << "]";
+    }
+    else
+    {
+        return s << "[" << *subnode << "]";
+    }
 }
 
 Repeat::Repeat(ACN n)
@@ -158,7 +236,7 @@ bool Text::addCompletions(ACState& s)
     }
     else
     {
-        bool matches = param ? (!s.word().empty() && s.word()[0] != '-') : (s.word() == exactText);
+        bool matches = param ? (!s.word().s.empty() && s.word().s[0] != '-') : (s.word().s == exactText);
         s.i += matches ? 1 : 0;
         return !matches;
     }
@@ -181,7 +259,7 @@ bool Flag::addCompletions(ACState& s)
     if (s.atCursor())
     {
         // only offer flag completions if the user requests it with "-"
-        if (!s.word().empty() && s.word()[0] == '-')
+        if (!s.word().s.empty() && s.word().s[0] == '-')
         {
             s.addCompletion(flagText);
         }
@@ -189,7 +267,7 @@ bool Flag::addCompletions(ACState& s)
     }
     else
     {
-        bool matches = s.word() == flagText;
+        bool matches = s.word().s == flagText;
         s.i += matches ? 1 : 0;
         return !matches;
     }
@@ -243,9 +321,19 @@ std::ostream& Either::describe(std::ostream& s) const
     }
     else
     {
+        std::ostringstream s2;
         for (int i = 0; i < eithers.size() * 2 - 1; ++i)
         {
-            (i & 1 ? s << "|" : s << *eithers[i / 2]);
+            (i & 1 ? s2 << "|" : s2 << *eithers[i / 2]);
+        }
+        std::string str = s2.str();
+        if (str.find(' ') == std::string::npos)
+        {
+            s << str;
+        }
+        else
+        {
+            s << "(" << str << ")";
         }
     }
     return s;
@@ -265,7 +353,7 @@ bool WholeNumber::addCompletions(ACState& s)
     }
     else
     {
-        for (char c : s.word())
+        for (char c : s.word().s)
         {
             if (!isdigit(c))
             {
@@ -295,37 +383,24 @@ bool LocalFS::addCompletions(ACState& s)
 {
     if (s.atCursor())
     {
-        std::string w = s.word();
-        bool quoted = !w.empty() && w[0] == '\"' || w[0] == '\'';
-        if (quoted)
-        {
-            w.erase(0, 1);
-        }
-        fs::path searchPath = w + "*";
+        fs::path searchPath(s.word().s + (s.word().s.empty() || s.word().s.back() == '\\' ? "*" : ""));
         bool relative = !searchPath.is_absolute();
         searchPath = relative ? fs::current_path() / searchPath : searchPath;
-        searchPath.remove_filename(); // iterate the whole directory, and filter
-        std::string cp = fs::current_path().u8string();
-        cp.append("\\");
-        for (fs::directory_iterator iter(searchPath); iter != fs::directory_iterator(); ++iter)
+        std::string cp = relative ? fs::current_path().u8string() + "\\" : "";
+        if ((searchPath.filename() == ".." || searchPath.filename() == ".") && fs::exists(searchPath))
         {
-            if (reportFolders && fs::is_directory(iter->status()) ||
-                reportFiles && fs::is_regular_file(iter->status()))
+            s.addPathCompletion(searchPath.u8string(), cp, true, '\\', true);
+        }
+        else
+        {
+            searchPath.remove_filename(); // iterate the whole directory, and filter
+            for (fs::directory_iterator iter(searchPath); iter != fs::directory_iterator(); ++iter)
             {
-                std::string f = iter->path().u8string();
-                if (relative && f.size() > cp.size() && f.compare(0,cp.size(), cp) == 0)
+                if (reportFolders && fs::is_directory(iter->status()) ||
+                    reportFiles && fs::is_regular_file(iter->status()))
                 {
-                    f.erase(0, cp.size());
+                    s.addPathCompletion(iter->path().u8string(), cp, fs::is_directory(iter->status()), '\\', true);
                 }
-                if (quoted)
-                {
-                    f.insert(0, 1, s.word()[0]);
-                }
-                if (s.unixStyle && fs::is_directory(iter->status()))
-                {
-                    f += "\\";
-                }
-                s.addCompletion(f, true);
             }
         }
         return true;
@@ -333,7 +408,7 @@ bool LocalFS::addCompletions(ACState& s)
     else
     {
         // don't let an option be misinterpreted as a filename.  Files beginning with a '-' will need to be quoted
-        bool stop = s.word().empty() || s.word().at(0) == '-';
+        bool stop = s.word().s.empty() || s.word().s.at(0) == '-';
         s.i += stop ? 0 : 1;
         return stop;
     }
@@ -362,7 +437,7 @@ bool MegaFS::addCompletions(ACState& s)
         {
             Node* n = NULL;
             std::string pathprefix;
-            if (!s.word().empty() && s.word()[0] == '/')
+            if (!s.word().s.empty() && s.word().s[0] == '/')
             {
                 pathprefix += "/";
                 n = client->nodebyhandle(client->rootnodes[0]);
@@ -374,11 +449,10 @@ bool MegaFS::addCompletions(ACState& s)
 
             // drill down folders
             size_t sepPos = 0;
-            while (n && std::string::npos != (sepPos = s.word().find('/', pathprefix.size())))
+            while (n && std::string::npos != (sepPos = s.word().s.find('/', pathprefix.size())))
             {
-                std::string folderName = s.word().substr(pathprefix.size(), sepPos - pathprefix.size());
+                std::string folderName = s.word().s.substr(pathprefix.size(), sepPos - pathprefix.size());
                 pathprefix += folderName + "/";
-                Node* nodematch = NULL;
                 if (folderName == ".")
                 {
                     n = n;
@@ -389,6 +463,7 @@ bool MegaFS::addCompletions(ACState& s)
                 }
                 else
                 {
+                    Node* nodematch = NULL;
                     for (Node* subnode : n->children)
                     {
                         if (subnode->type == FOLDERNODE && subnode->displayname() == folderName)
@@ -401,15 +476,24 @@ bool MegaFS::addCompletions(ACState& s)
                 }
             }
 
-            // iterate specified folder
-            if (n)
+            std::string leaf = s.word().s.substr(pathprefix.size(), std::string::npos);
+            if (n && (leaf == "." || (leaf == ".." && n->type != ROOTNODE)))
             {
-                for (Node* subnode : n->children)
+                std::string f = s.word().s;
+                s.addPathCompletion(f, "", true, '/', false);
+            }
+            else
+            {
+                // iterate specified folder
+                if (n)
                 {
-                    if (reportFolders && subnode->type == FOLDERNODE ||
-                        reportFiles && subnode->type == FILENODE)
+                    for (Node* subnode : n->children)
                     {
-                        s.addCompletion(pathprefix + subnode->displayname() + (s.unixStyle && subnode->type == FOLDERNODE ? "/" : ""));
+                        if (reportFolders && subnode->type == FOLDERNODE ||
+                            reportFiles && subnode->type == FILENODE)
+                        {
+                            s.addPathCompletion(pathprefix + subnode->displayname(), "", subnode->type == FOLDERNODE, '/', false);
+                        }
                     }
                 }
             }
@@ -419,7 +503,7 @@ bool MegaFS::addCompletions(ACState& s)
     else
     {
         // don't let an option be misinterpreted as a filename.  Files beginning with a '-' will need to be quoted
-        bool stop = s.word().empty() || s.word().at(0) == '-';
+        bool stop = s.word().s.empty() || s.word().s.at(0) == '-';
         s.i += stop ? 0 : 1;
         return stop;
     }
@@ -451,23 +535,35 @@ std::pair<int, int> identifyNextWord(const std::string& line, int startPos)
 
     if (*ptr == '"')
     {
-        for (++ptr; (*ptr != '"') && *ptr; )
+        for (++ptr; *ptr; ++ptr)
         {
-            ++ptr;
+            if (*ptr == '"')
+            {
+                ++ptr;
+                break;
+            }
         }
     }
     else if (*ptr == '\'')
     {
-        for (++ptr; (*ptr != '\'') && *ptr; )
+        for (++ptr; *ptr; ++ptr)
         {
-            ++ptr;
+            if (*ptr == '\'')
+            {
+                ++ptr;
+                break;
+            }
         }
     }
     else
     {
-        for (; (*ptr != ' ') && *ptr; )
+        for (; *ptr; ++ptr)
         {
-            ++ptr;
+            if ((*ptr == ' ') || (*ptr != '\"') || (*ptr == '\''))
+            {
+                ++ptr;
+                break;
+            }
         }
     }
 
@@ -481,23 +577,40 @@ CompletionState autoComplete(const std::string line, size_t insertPos, ACN synta
     ACState acs;
     acs.unixStyle = unixStyle;
     std::pair<int, int> linepos{ 0,0 };
-    bool last, cursorInWord;
+    bool last;
     do
     {
         linepos = identifyNextWord(line, linepos.second);
+        std::string word = line.substr(linepos.first, linepos.second - linepos.first);
         last = linepos.first == linepos.second;
-        cursorInWord = linepos.first <= insertPos && insertPos <= linepos.second;
-        if (acs.words.empty() || !last || acs.wordPos[acs.wordPos.size() - 1].second < linepos.first || cursorInWord)
+        bool cursorInWord = linepos.first <= insertPos && insertPos <= linepos.second;
+        if (cursorInWord)
+        {
+            last = true;
+            word.erase(insertPos - linepos.first, std::string::npos);
+        }
+        if (!acs.words.empty() && linepos.first == acs.wordPos.back().second)
+        {
+            // continuation, so combine into one word. eg "c:\prog files"\nextthing
+            ACState::quoting q(word); 
+            acs.words.back().s += word;
+            acs.wordPos.back().second = linepos.second;
+            if (!acs.words.back().q.quoted)
+            {
+                acs.words.back().q = q;
+            }
+        }
+        else
         {
             acs.wordPos.push_back(linepos);
-            acs.words.push_back(line.substr(linepos.first, linepos.second - linepos.first));
+            acs.words.emplace_back(word);
         }
-    } while (!last && !cursorInWord);
+    } while (!last);
 
     acs.i = 0;
     syntax->addCompletions(acs);
 
-    return CompletionState{ line, acs.wordPos[acs.wordPos.size()-1], acs.completions, unixStyle };
+    return CompletionState{ line, acs.wordPos.back(), acs.words.back(), acs.completions, unixStyle };
 }
 
 static size_t utf8strlen(const std::string s)
@@ -522,12 +635,10 @@ void applyCompletion(CompletionState& s, bool forwards, unsigned consoleWidth)
             int index = ((!forwards && s.lastAppliedIndex == -1) ? -1 : (s.lastAppliedIndex + (forwards ? 1 : -1))) + (int)s.completions.size();
             index %= s.completions.size();
 
-            // add quotes if it has a space and doesn't already start with a quote
-            std::string w = s.completions[index].s;
-            if (w.find(' ') != std::string::npos && !w.empty() && w[0] != '\"' && w[0] != '\'')
-            {
-                w = "\"" + w + "\"";
-            }
+            // restore quotes if it had them already
+            auto& c = s.completions[index];
+            std::string w = c.s;
+            s.originalWord.q.applyQuotes(w);
             s.line.replace(s.wordPos.first, s.wordPos.second - s.wordPos.first, w);
             s.wordPos.second = int(w.size() + s.wordPos.first);
             s.lastAppliedIndex = index;
@@ -538,11 +649,9 @@ void applyCompletion(CompletionState& s, bool forwards, unsigned consoleWidth)
             {
                 // add characters that match all possibilities
                 std::string exactChars = s.completions[0].s;
-                for (int i = s.wordPos.first; i < s.wordPos.second && i - s.wordPos.first < exactChars.size(); ++i)
-                {
-                    // keep the uppercase/lowercase as specified
-                    exactChars[i - s.wordPos.first] = s.line[i];
-                }
+                // keep the uppercase/lowercase as specified by the user (for case sensitive they will match anyway)
+                size_t commonLen = std::min<size_t>(exactChars.size(), s.originalWord.s.size());
+                exactChars.replace(0, commonLen, s.originalWord.s.substr(0, commonLen));
                 for (auto& c : s.completions)
                 {
                     for (int i = 0; i < exactChars.size(); ++i)
@@ -554,6 +663,7 @@ void applyCompletion(CompletionState& s, bool forwards, unsigned consoleWidth)
                         }
                     }
                 }
+                s.originalWord.q.applyQuotes(exactChars);
                 s.line.replace(s.wordPos.first, s.wordPos.second - s.wordPos.first, exactChars);
                 s.wordPos.second = int(exactChars.size() + s.wordPos.first);
                 s.firstPressDone = true;
@@ -581,6 +691,11 @@ void applyCompletion(CompletionState& s, bool forwards, unsigned consoleWidth)
                 size_t row = 0, linepos = 0;
                 while (s.unixListCount < s.completions.size() && row < 5)
                 {
+                    if (linepos > 0 && linepos % columnWidth == 0)
+                    {
+                        std::cout << ' ';
+                        linepos += 1;
+                    }
                     if (linepos <= columnWidth * (columns-1))
                     {
                         while (linepos % columnWidth)
