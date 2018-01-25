@@ -559,9 +559,8 @@ std::pair<int, int> identifyNextWord(const std::string& line, int startPos)
     {
         for (; *ptr; ++ptr)
         {
-            if ((*ptr == ' ') || (*ptr != '\"') || (*ptr == '\''))
+            if (*ptr == ' ' || (*ptr == '\"') || (*ptr == '\''))
             {
-                ++ptr;
                 break;
             }
         }
@@ -573,6 +572,11 @@ std::pair<int, int> identifyNextWord(const std::string& line, int startPos)
 
 CompletionState autoComplete(const std::string line, size_t insertPos, ACN syntax, bool unixStyle)
 {
+    if (insertPos == std::string::npos)
+    {
+        insertPos = line.size();
+    }
+
     // find where we're up to in the line and what syntax options are available at that point
     ACState acs;
     acs.unixStyle = unixStyle;

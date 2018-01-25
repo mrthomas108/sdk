@@ -21,6 +21,16 @@
 
 #include "sdk_test.h"
 
+#ifdef WIN32
+#include "mega/win32/autocomplete.h"
+#include <filesystem>
+#define getcwd _getcwd
+void usleep(int n) 
+{
+    Sleep(n / 1000);
+}
+#endif
+
 void SdkTest::SetUp()
 {
     // do some initialization
@@ -1991,6 +2001,646 @@ TEST_F(SdkTest, SdkTestShares)
 
 }
 
+/**
+* @brief TEST_F SdkTestConsoleAutocomplete
+*
+* Run various tests confirming the console autocomplete will work as expected
+*
+*/
+#ifdef WIN32
+
+bool cmp(const autocomplete::CompletionState& c, const std::vector<std::string>& s)
+{
+    bool result = true;
+    if (c.completions.size() != s.size())
+    {
+        result = false;
+    }
+    else
+    {
+        for (int i = c.completions.size(); i--; )
+        {
+            if (c.completions[i].s != s[i])
+            {
+                result = false;
+                break;
+            }
+        }
+    }
+    if (!result)
+    {
+        for (int i = 0; i < c.completions.size() || i < s.size(); ++i)
+        {
+            cout << (i < s.size() ? s[i] : "") << "/" << (i < c.completions.size() ? c.completions[i].s : "") << endl;
+        }
+    }
+    return result;
+}
+
+TEST_F(SdkTest, SdkTestConsoleAutocomplete)
+{
+    using namespace autocomplete;
+
+    {
+        std::unique_ptr<Either> p(new Either);
+        p->Add(sequence(text("cd")));
+        p->Add(sequence(text("lcd")));
+        p->Add(sequence(text("ls"), opt(flag("-R"))));
+        p->Add(sequence(text("lls"), opt(flag("-R")), param("folder")));
+        ACN syntax(std::move(p));
+
+        {
+            auto r = autoComplete("", 0, syntax, false);
+            std::vector<std::string> e{ "cd", "lcd", "ls", "lls" };
+            ASSERT_TRUE(cmp(r, e));
+        }
+
+        {
+            auto r = autoComplete("l", 1, syntax, false);
+            std::vector<std::string> e{ "lcd", "ls", "lls" };
+            ASSERT_TRUE(cmp(r, e));
+        }
+
+        {
+            auto r = autoComplete("ll", 2, syntax, false);
+            std::vector<std::string> e{ "lls" };
+            ASSERT_TRUE(cmp(r, e));
+        }
+
+        {
+            auto r = autoComplete("lls", 3, syntax, false);
+            std::vector<std::string> e{ "lls" };
+            ASSERT_TRUE(cmp(r, e));
+        }
+
+        {
+            auto r = autoComplete("lls ", 4, syntax, false);
+            std::vector<std::string> e{ "<folder>" };
+            ASSERT_TRUE(cmp(r, e));
+        }
+
+        {
+            auto r = autoComplete("lls -", 5, syntax, false);
+            std::vector<std::string> e{ "-R" };
+            ASSERT_TRUE(cmp(r, e));
+        }
+
+        {
+            auto r = autoComplete("x", 1, syntax, false);
+            std::vector<std::string> e{};
+            ASSERT_TRUE(cmp(r, e));
+        }
+
+        {
+            auto r = autoComplete("x ", 2, syntax, false);
+            std::vector<std::string> e{};
+            ASSERT_TRUE(cmp(r, e));
+        }
+    }
+
+    ::mega::handle megaCurDir = UNDEF;
+
+    MegaApiImpl* impl = *((MegaApiImpl**)(((char*)megaApi[0]) + sizeof(*megaApi[0])) - 1); //megaApi[0]->pImpl;
+    MegaClient* client = impl->getMegaClient();
+
+
+    std::unique_ptr<Either> p(new Either);
+    p->Add(sequence(text("cd")));
+    p->Add(sequence(text("lcd")));
+    p->Add(sequence(text("ls"), opt(flag("-R")), opt(ACN(new MegaFS(true, true, client, &megaCurDir, "")))));
+    p->Add(sequence(text("lls"), opt(flag("-R")), opt(ACN(new LocalFS(true, true, "")))));
+    ACN syntax(std::move(p));
+
+    std::experimental::filesystem::create_directory("test_autocomplete_files");
+    std::experimental::filesystem::current_path("test_autocomplete_files");
+
+    std::experimental::filesystem::create_directory("dir1");
+    std::experimental::filesystem::create_directory("dir1\\sub11");
+    std::experimental::filesystem::create_directory("dir1\\sub12");
+    std::experimental::filesystem::create_directory("dir2");
+    std::experimental::filesystem::create_directory("dir2\\sub21");
+    std::experimental::filesystem::create_directory("dir2\\sub22");
+    std::experimental::filesystem::create_directory("dir2a");
+    std::experimental::filesystem::create_directory("dir2a\\dir space");
+    std::experimental::filesystem::create_directory("dir2a\\dir space\\next");
+    std::experimental::filesystem::create_directory("dir2a\\dir space2");
+    std::experimental::filesystem::create_directory("dir2a\\nospace");
+
+    {
+        auto r = autoComplete("ls -R", 5, syntax, false);
+        std::vector<std::string> e{"-R"};
+        ASSERT_TRUE(cmp(r, e));
+    }
+
+    // dos style file completion, local fs
+
+    {
+        auto r = autoComplete("lls ", 4, syntax, false);
+        std::vector<std::string> e{ "dir1", "dir2", "dir2a" };
+        ASSERT_TRUE(cmp(r, e));
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "lls dir1");
+    }
+
+    {
+        auto r = autoComplete("lls di", 6, syntax, false);
+        std::vector<std::string> e{ "dir1", "dir2", "dir2a" };
+        ASSERT_TRUE(cmp(r, e));
+    }
+
+    {
+        auto r = autoComplete("lls dir2", 8, syntax, false);
+        std::vector<std::string> e{ "dir2", "dir2a" };
+        ASSERT_TRUE(cmp(r, e));
+    }
+
+    {
+        auto r = autoComplete("lls dir2a", 9, syntax, false);
+        std::vector<std::string> e{ "dir2a" };
+        ASSERT_TRUE(cmp(r, e));
+    }
+
+    {
+        auto r = autoComplete("lls dir2 something after", 8, syntax, false);
+        std::vector<std::string> e{ "dir2", "dir2a" };
+        ASSERT_TRUE(cmp(r, e));
+    }
+
+    {
+        auto r = autoComplete("lls dir2something immeditely after", 8, syntax, false);
+        std::vector<std::string> e{ "dir2", "dir2a" };
+        ASSERT_TRUE(cmp(r, e));
+    }
+
+    {
+        auto r = autoComplete("lls dir2\\", 9, syntax, false);
+        std::vector<std::string> e{ "dir2\\sub21", "dir2\\sub22" };
+        ASSERT_TRUE(cmp(r, e));
+    }
+
+    {
+        auto r = autoComplete("lls dir2\\.\\", 11, syntax, false);
+        std::vector<std::string> e{ "dir2\\.\\sub21", "dir2\\.\\sub22" };
+        ASSERT_TRUE(cmp(r, e));
+    }
+
+    {
+        auto r = autoComplete("lls dir2\\..", 11, syntax, false);
+        std::vector<std::string> e{ "dir2\\.." };
+        ASSERT_TRUE(cmp(r, e));
+    }
+
+    {
+        auto r = autoComplete("lls dir2\\..\\", 12, syntax, false);
+        std::vector<std::string> e{ "dir2\\..\\dir1", "dir2\\..\\dir2", "dir2\\..\\dir2a" };
+        ASSERT_TRUE(cmp(r, e));
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "lls dir2\\..\\dir1");
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "lls dir2\\..\\dir2");
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "lls dir2\\..\\dir2a");
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "lls dir2\\..\\dir1");
+        applyCompletion(r, false, 100);
+        ASSERT_EQ(r.line, "lls dir2\\..\\dir2a");
+        applyCompletion(r, false, 100);
+        ASSERT_EQ(r.line, "lls dir2\\..\\dir2");
+    }
+
+    {
+        auto r = autoComplete("lls dir2a\\", 10, syntax, false);
+        applyCompletion(r, false, 100);
+        ASSERT_EQ(r.line, "lls dir2a\\nospace");
+        applyCompletion(r, false, 100);
+        ASSERT_EQ(r.line, "lls \"dir2a\\dir space2\"");
+        applyCompletion(r, false, 100);
+        ASSERT_EQ(r.line, "lls \"dir2a\\dir space\"");
+        applyCompletion(r, false, 100);
+        ASSERT_EQ(r.line, "lls dir2a\\nospace");
+    }
+
+    {
+        auto r = autoComplete("lls \"dir\"1\\", 11, syntax, false);
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "lls \"dir1\\sub11\"");
+    }
+
+    {
+        auto r = autoComplete("lls dir1\\\"..\\dir2\\\"", std::string::npos, syntax, false);
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "lls \"dir1\\..\\dir2\\sub21\"");
+    }
+
+    {
+        auto r = autoComplete("lls c:\\prog", std::string::npos, syntax, false);
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "lls \"c:\\Program Files\"");
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "lls \"c:\\Program Files (x86)\"");
+    }
+
+    {
+        auto r = autoComplete("lls \"c:\\program files \"", std::string::npos, syntax, false);
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "lls \"c:\\Program Files (x86)\"");
+    }
+
+    // unix style completions, local fs
+
+    {
+        auto r = autoComplete("lls ", 4, syntax, true);
+        std::vector<std::string> e{ "dir1\\", "dir2\\", "dir2a\\" };
+        ASSERT_TRUE(cmp(r, e));
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "lls dir");
+    }
+
+    {
+        auto r = autoComplete("lls di", 6, syntax, true);
+        std::vector<std::string> e{ "dir1\\", "dir2\\", "dir2a\\" };
+        ASSERT_TRUE(cmp(r, e));
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "lls dir");
+    }
+
+    {
+        auto r = autoComplete("lls dir2", 8, syntax, true);
+        std::vector<std::string> e{ "dir2\\", "dir2a\\" };
+        ASSERT_TRUE(cmp(r, e));
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "lls dir2");
+    }
+
+    {
+        auto r = autoComplete("lls dir2a", 9, syntax, true);
+        std::vector<std::string> e{ "dir2a\\" };
+        ASSERT_TRUE(cmp(r, e));
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "lls dir2a\\");
+    }
+
+    {
+        auto r = autoComplete("lls dir2 something after", 8, syntax, true);
+        std::vector<std::string> e{ "dir2\\", "dir2a\\" };
+        ASSERT_TRUE(cmp(r, e));
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "lls dir2 something after");
+    }
+
+    {
+        auto r = autoComplete("lls dir2asomething immediately after", 9, syntax, true);
+        std::vector<std::string> e{ "dir2a\\" };
+        ASSERT_TRUE(cmp(r, e));
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "lls dir2a\\ immediately after");
+    }
+
+    {
+        auto r = autoComplete("lls dir2\\", 9, syntax, true);
+        std::vector<std::string> e{ "dir2\\sub21\\", "dir2\\sub22\\" };
+        ASSERT_TRUE(cmp(r, e));
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "lls dir2\\sub2");
+        auto rr = autoComplete("lls dir2\\sub22", 14, syntax, true);
+        applyCompletion(rr, true, 100);
+        ASSERT_EQ(rr.line, "lls dir2\\sub22\\");
+    }
+
+    {
+        auto r = autoComplete("lls dir2\\.\\", 11, syntax, true);
+        std::vector<std::string> e{ "dir2\\.\\sub21\\", "dir2\\.\\sub22\\" };
+        ASSERT_TRUE(cmp(r, e));
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "lls dir2\\.\\sub2");
+    }
+
+    {
+        auto r = autoComplete("lls dir2\\..", 11, syntax, true);
+        std::vector<std::string> e{ "dir2\\..\\" };
+        ASSERT_TRUE(cmp(r, e));
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "lls dir2\\..\\");
+    }
+
+    {
+        auto r = autoComplete("lls dir2\\..\\", 12, syntax, true);
+        std::vector<std::string> e{ "dir2\\..\\dir1\\", "dir2\\..\\dir2\\", "dir2\\..\\dir2a\\" };
+        ASSERT_TRUE(cmp(r, e));
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "lls dir2\\..\\dir");
+    }
+
+    {
+        auto r = autoComplete("lls dir2\\..\\", 12, syntax, true);
+        std::vector<std::string> e{ "dir2\\..\\dir1\\", "dir2\\..\\dir2\\", "dir2\\..\\dir2a\\" };
+        ASSERT_TRUE(cmp(r, e));
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "lls dir2\\..\\dir");
+    }
+
+    {
+        auto r = autoComplete("lls dir2a\\d", 11, syntax, true);
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "lls \"dir2a\\dir space\"");
+        auto rr = autoComplete("lls \"dir2a\\dir space\"\\", std::string::npos, syntax, false);
+        applyCompletion(rr, true, 100);
+        ASSERT_EQ(rr.line, "lls \"dir2a\\dir space\\next\"");
+    }
+
+    {
+        auto r = autoComplete("lls \"dir\"1\\", std::string::npos, syntax, true);
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "lls \"dir1\\sub1\"");
+    }
+
+    {
+        auto r = autoComplete("lls dir1\\\"..\\dir2\\\"", std::string::npos, syntax, true);
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "lls \"dir1\\..\\dir2\\sub2\"");
+    }
+
+    {
+        auto r = autoComplete("lls c:\\prog", std::string::npos, syntax, true);
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "lls c:\\program");
+    }
+
+    {
+        auto r = autoComplete("lls \"c:\\program files \"", std::string::npos, syntax, true);
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "lls \"c:\\program files (x86)\\\"");
+    }
+
+    {
+        auto r = autoComplete("lls 'c:\\program files '", std::string::npos, syntax, true);
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "lls 'c:\\program files (x86)\\'");
+    }
+
+    // mega dir setup
+
+    MegaNode *rootnode = megaApi[0]->getRootNode();
+    ASSERT_NO_FATAL_FAILURE(createFolder(0, "test_autocomplete_megafs", rootnode));
+    MegaNode *n0 = megaApi[0]->getNodeByHandle(h);
+
+    megaCurDir = h;
+
+    ASSERT_NO_FATAL_FAILURE(createFolder(0, "dir1", n0));
+    MegaNode *n1 = megaApi[0]->getNodeByHandle(h);
+    ASSERT_NO_FATAL_FAILURE(createFolder(0, "sub11", n1));
+    ASSERT_NO_FATAL_FAILURE(createFolder(0, "sub12", n1));
+
+    ASSERT_NO_FATAL_FAILURE(createFolder(0, "dir2", n0));
+    MegaNode *n2 = megaApi[0]->getNodeByHandle(h);
+    ASSERT_NO_FATAL_FAILURE(createFolder(0, "sub21", n2));
+    ASSERT_NO_FATAL_FAILURE(createFolder(0, "sub22", n2));
+
+    ASSERT_NO_FATAL_FAILURE(createFolder(0, "dir2a", n0));
+    MegaNode *n3 = megaApi[0]->getNodeByHandle(h);
+    ASSERT_NO_FATAL_FAILURE(createFolder(0, "dir space", n3));
+    MegaNode *n31 = megaApi[0]->getNodeByHandle(h);
+    ASSERT_NO_FATAL_FAILURE(createFolder(0, "dir space2", n3));
+    ASSERT_NO_FATAL_FAILURE(createFolder(0, "nospace", n3));
+    ASSERT_NO_FATAL_FAILURE(createFolder(0, "next", n31));
+
+
+    // dos style mega FS completions
+
+    {
+        auto r = autoComplete("ls ", std::string::npos, syntax, false);
+        std::vector<std::string> e{ "dir1", "dir2", "dir2a" };
+        ASSERT_TRUE(cmp(r, e));
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "ls dir1");
+    }
+
+    {
+        auto r = autoComplete("ls di", std::string::npos, syntax, false);
+        std::vector<std::string> e{ "dir1", "dir2", "dir2a" };
+        ASSERT_TRUE(cmp(r, e));
+    }
+
+    {
+        auto r = autoComplete("ls dir2", std::string::npos, syntax, false);
+        std::vector<std::string> e{ "dir2", "dir2a" };
+        ASSERT_TRUE(cmp(r, e));
+    }
+
+    {
+        auto r = autoComplete("ls dir2a", std::string::npos, syntax, false);
+        std::vector<std::string> e{ "dir2a" };
+        ASSERT_TRUE(cmp(r, e));
+    }
+
+    {
+        auto r = autoComplete("ls dir2 something after", 7, syntax, false);
+        std::vector<std::string> e{ "dir2", "dir2a" };
+        ASSERT_TRUE(cmp(r, e));
+    }
+
+    {
+        auto r = autoComplete("ls dir2something immeditely after", 7, syntax, false);
+        std::vector<std::string> e{ "dir2", "dir2a" };
+        ASSERT_TRUE(cmp(r, e));
+    }
+
+    {
+        auto r = autoComplete("ls dir2/", std::string::npos, syntax, false);
+        std::vector<std::string> e{ "dir2/sub21", "dir2/sub22" };
+        ASSERT_TRUE(cmp(r, e));
+    }
+
+    {
+        auto r = autoComplete("ls dir2/./", std::string::npos, syntax, false);
+        std::vector<std::string> e{ "dir2/./sub21", "dir2/./sub22" };
+        ASSERT_TRUE(cmp(r, e));
+    }
+
+    {
+        auto r = autoComplete("ls dir2/..", std::string::npos, syntax, false);
+        std::vector<std::string> e{ "dir2/.." };
+        ASSERT_TRUE(cmp(r, e));
+    }
+
+    {
+        auto r = autoComplete("ls dir2/../", std::string::npos, syntax, false);
+        std::vector<std::string> e{ "dir2/../dir1", "dir2/../dir2", "dir2/../dir2a" };
+        ASSERT_TRUE(cmp(r, e));
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "ls dir2/../dir1");
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "ls dir2/../dir2");
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "ls dir2/../dir2a");
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "ls dir2/../dir1");
+        applyCompletion(r, false, 100);
+        ASSERT_EQ(r.line, "ls dir2/../dir2a");
+        applyCompletion(r, false, 100);
+        ASSERT_EQ(r.line, "ls dir2/../dir2");
+    }
+
+    {
+        auto r = autoComplete("ls dir2a/", std::string::npos, syntax, false);
+        applyCompletion(r, false, 100);
+        ASSERT_EQ(r.line, "ls dir2a/nospace");
+        applyCompletion(r, false, 100);
+        ASSERT_EQ(r.line, "ls \"dir2a/dir space2\"");
+        applyCompletion(r, false, 100);
+        ASSERT_EQ(r.line, "ls \"dir2a/dir space\"");
+        applyCompletion(r, false, 100);
+        ASSERT_EQ(r.line, "ls dir2a/nospace");
+    }
+
+    {
+        auto r = autoComplete("ls \"dir\"1/", std::string::npos, syntax, false);
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "ls \"dir1/sub11\"");
+    }
+
+    {
+        auto r = autoComplete("ls dir1/\"../dir2/\"", std::string::npos, syntax, false);
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "ls \"dir1/../dir2/sub21\"");
+    }
+
+    {
+        auto r = autoComplete("ls /test_autocomplete_meg", std::string::npos, syntax, false);
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "ls /test_autocomplete_megafs");
+    }
+
+    // unix style mega FS completions
+
+    {
+        auto r = autoComplete("ls ", std::string::npos, syntax, true);
+        std::vector<std::string> e{ "dir1/", "dir2/", "dir2a/" };
+        ASSERT_TRUE(cmp(r, e));
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "ls dir");
+    }
+
+    {
+        auto r = autoComplete("ls di", std::string::npos, syntax, true);
+        std::vector<std::string> e{ "dir1/", "dir2/", "dir2a/" };
+        ASSERT_TRUE(cmp(r, e));
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "ls dir");
+    }
+
+    {
+        auto r = autoComplete("ls dir2", std::string::npos, syntax, true);
+        std::vector<std::string> e{ "dir2/", "dir2a/" };
+        ASSERT_TRUE(cmp(r, e));
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "ls dir2");
+    }
+
+    {
+        auto r = autoComplete("ls dir2a", std::string::npos, syntax, true);
+        std::vector<std::string> e{ "dir2a/" };
+        ASSERT_TRUE(cmp(r, e));
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "ls dir2a/");
+    }
+
+    {
+        auto r = autoComplete("ls dir2 something after", 7, syntax, true);
+        std::vector<std::string> e{ "dir2/", "dir2a/" };
+        ASSERT_TRUE(cmp(r, e));
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "ls dir2 something after");
+    }
+
+    {
+        auto r = autoComplete("ls dir2asomething immediately after", 8, syntax, true);
+        std::vector<std::string> e{ "dir2a/" };
+        ASSERT_TRUE(cmp(r, e));
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "ls dir2a/ immediately after");
+    }
+
+    {
+        auto r = autoComplete("ls dir2/", std::string::npos, syntax, true);
+        std::vector<std::string> e{ "dir2/sub21/", "dir2/sub22/" };
+        ASSERT_TRUE(cmp(r, e));
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "ls dir2/sub2");
+        auto rr = autoComplete("ls dir2/sub22", std::string::npos, syntax, true);
+        applyCompletion(rr, true, 100);
+        ASSERT_EQ(rr.line, "ls dir2/sub22/");
+    }
+
+    {
+        auto r = autoComplete("ls dir2/./", std::string::npos, syntax, true);
+        std::vector<std::string> e{ "dir2/./sub21/", "dir2/./sub22/" };
+        ASSERT_TRUE(cmp(r, e));
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "ls dir2/./sub2");
+    }
+
+    {
+        auto r = autoComplete("ls dir2/..", std::string::npos, syntax, true);
+        std::vector<std::string> e{ "dir2/../" };
+        ASSERT_TRUE(cmp(r, e));
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "ls dir2/../");
+    }
+
+    {
+        auto r = autoComplete("ls dir2/../", std::string::npos, syntax, true);
+        std::vector<std::string> e{ "dir2/../dir1/", "dir2/../dir2/", "dir2/../dir2a/" };
+        ASSERT_TRUE(cmp(r, e));
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "ls dir2/../dir");
+    }
+
+    {
+        auto r = autoComplete("ls dir2/../", std::string::npos, syntax, true);
+        std::vector<std::string> e{ "dir2/../dir1/", "dir2/../dir2/", "dir2/../dir2a/" };
+        ASSERT_TRUE(cmp(r, e));
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "ls dir2/../dir");
+    }
+
+    {
+        auto r = autoComplete("ls dir2a/d", std::string::npos, syntax, true);
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "ls \"dir2a/dir space\"");
+        auto rr = autoComplete("ls \"dir2a/dir space\"/", std::string::npos, syntax, false);
+        applyCompletion(rr, true, 100);
+        ASSERT_EQ(rr.line, "ls \"dir2a/dir space/next\"");
+    }
+
+    {
+        auto r = autoComplete("ls \"dir\"1/", std::string::npos, syntax, true);
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "ls \"dir1/sub1\"");
+    }
+
+    {
+        auto r = autoComplete("ls dir1/\"../dir2/\"", std::string::npos, syntax, true);
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "ls \"dir1/../dir2/sub2\"");
+    }
+
+    {
+        auto r = autoComplete("ls /test_autocomplete_meg", std::string::npos, syntax, true);
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "ls /test_autocomplete_megafs/");
+        r = autoComplete(r.line + "dir2a", std::string::npos, syntax, true);
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "ls /test_autocomplete_megafs/dir2a/");
+        r = autoComplete(r.line + "d", std::string::npos, syntax, true);
+        applyCompletion(r, true, 100);
+        ASSERT_EQ(r.line, "ls \"/test_autocomplete_megafs/dir2a/dir space\"");
+    }
+
+
+}
+#endif
+
 #ifdef ENABLE_CHAT
 
 /**
@@ -2040,7 +2690,7 @@ TEST_F(SdkTest, SdkTestChat)
 
     // --- Check list of available chats --- (fetch is done at SetUp())
 
-    uint numChats = chats.size();      // permanent chats cannot be deleted, so they're kept forever
+    size_t numChats = chats.size();      // permanent chats cannot be deleted, so they're kept forever
 
 
     // --- Create a group chat ---
